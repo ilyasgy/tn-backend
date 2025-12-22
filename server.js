@@ -69,6 +69,15 @@ app.get("/health", (req, res) => {
   res.json({ ok: true, message: "API is running" });
 });
 
+app.get("/debug/env", (req, res) => {
+  res.json({
+    hasResendKey: !!process.env.RESEND_API_KEY,
+    supportFrom: process.env.SUPPORT_FROM || null,
+    supportInbox: process.env.SUPPORT_INBOX || null,
+  });
+});
+
+
 // ✅ fixed options for the help widget
 app.get("/api/support/options", (req, res) => {
   res.json({ ok: true, options: SUPPORT_OPTIONS });
