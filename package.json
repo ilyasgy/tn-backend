@@ -7,7 +7,7 @@
   },
   "dependencies": {
     "cors": "^2.8.5",
-    "resend": "^6.6.0",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "resend": "^6.6.0"
   }
 }
