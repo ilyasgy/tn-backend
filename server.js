@@ -97,5 +97,17 @@ app.post("/api/contact", (req, res) => {
   res.json({ ok: true });
 });
 
+// resend
+
+import { Resend } from "resend";
+
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+app.post("/api/support/ticket", async (req, res) => {
+  // resend logic here
+});
+
+
+
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log("API running on", port));
