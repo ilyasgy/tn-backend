@@ -18,7 +18,7 @@ export function EmailBase({ title, preview, children }) {
     {
       // ✅ remove the dark “shape” behind the email
       // Most email clients render on white anyway; this avoids forcing a dark backdrop.
-      style: { background: "transparent", padding: "0", margin: "0" },
+      style: { background: "#f8f7f4", padding: "0", margin: "0" },
     },
 
     // preview text (hidden)
@@ -89,8 +89,8 @@ export function EmailBase({ title, preview, children }) {
               },
               React.createElement("img", {
                 src: BRAND.logo,
-                width: 26,
-                height: 26,
+                width: 33,
+                height: 33,
                 alt: BRAND.name,
                 style: { display: "block" },
               })
@@ -101,7 +101,7 @@ export function EmailBase({ title, preview, children }) {
               null,
               React.createElement(
                 "div",
-                { style: { fontWeight: 700, fontSize: "14px" } },
+                { style: { fontWeight: 600, fontSize: "14px" } },
                 `${BRAND.name} Support`
               ),
               React.createElement(
