@@ -122,7 +122,7 @@ function getClientIp(req) {
 
 function rateLimit(maxPerMin) {
   return (req, res, next) => {
-    const ip = getClientIp(req);
+    const ip = `${getClientIp(req)}:${req.path}`;
     const now = Date.now();
     const record = rateMap.get(ip) || { count: 0, resetAt: now + RATE_WINDOW_MS };
 
@@ -156,7 +156,7 @@ setInterval(() => {
 function requireInternalKey(req, res, next) {
   // Fail closed (safer)
   if (!INTERNAL_KEY) {
-    return res.status(500).json({ ok: false, error: "Server INTERNAL_KEY is not configured." });
+    return res.status(500).json({ ok: false, error: "Server misconfigured." });
   }
   const key = req.headers["x-internal-key"];
   if (!key || key !== INTERNAL_KEY) {
