@@ -65,36 +65,37 @@ export function EmailBase({ title, preview, children }) {
             "div",
             { style: { display: "flex", alignItems: "center" } },
 
-            React.createElement(
-              "div",
-              {
-                style: {
-                  width: "46px",
-                  height: "46px",
-                  borderRadius: "12px",
-                  border: "1px solid #e5e7eb",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: "#ffffff",
-                  overflow: "hidden",
-                  marginRight: "14px",
-                },
-              },
-              React.createElement("img", {
-                src: BRAND.logo,
-                alt: BRAND.name,
-                width: 34,
-                height: 34,
-                style: {
-                  display: "block",
-                  width: "34px",
-                  height: "34px",
-                  objectFit: "contain",
-                  objectPosition: "center",
-                },
-              })
-            ),
+React.createElement(
+  "div",
+  {
+    style: {
+      width: "56px",
+      height: "56px",
+      borderRadius: "14px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      background: "#ffffff",
+      overflow: "hidden",
+      marginRight: "16px",
+    },
+  },
+  React.createElement("img", {
+    src: BRAND.logo,
+    alt: BRAND.name,
+    width: 40,
+    height: 40,
+    style: {
+      display: "block",
+      width: "40px",
+      height: "40px",
+      objectFit: "contain",
+      objectPosition: "center",
+    },
+  })
+),
+
+
 
             React.createElement(
               "div",
