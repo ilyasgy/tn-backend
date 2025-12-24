@@ -1,22 +1,53 @@
+// server.js (secure + minimal: Support + Payment emails only)
+
+import dotenv from "dotenv";
+dotenv.config();
+
 import express from "express";
 import cors from "cors";
 import { Resend } from "resend";
 
-const app = express();
-app.use(express.json());
+// Email templates
+import supportTeamTpl from "./emailTemplates/support-team.js";
+import supportAutoTpl from "./emailTemplates/support-auto.js";
+import paymentSuccessTpl from "./emailTemplates/payment-success.js";
+import paymentFailedTpl from "./emailTemplates/payment-failed.js";
 
-// allow your Vercel site to call the API
+// -----------------------------
+// App + Config
+// -----------------------------
+const app = express();
+
+// IMPORTANT: behind Render/Reverse proxy, this makes req.ip + X-Forwarded-For work correctly
+app.set("trust proxy", 1);
+
+app.use(express.json({ limit: "200kb" }));
+
 app.use(
   cors({
-    origin: ["https://threatnest.com", "https://www.threatnest.com"],
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    origin: [
+      "https://threatnest.com",
+      "https://www.threatnest.com",
+      // uncomment for local testing
+      // "http://localhost:3000",
+      // "http://localhost:5173",
+    ],
+    methods: ["GET", "POST", "OPTIONS"],
     credentials: true,
   })
 );
 
-// Resend client (BACKEND ONLY)
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Resend (safe: don't crash if missing)
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
+// Required env
+const SUPPORT_INBOX = process.env.SUPPORT_INBOX || "";
+const SUPPORT_FROM = process.env.SUPPORT_FROM || "";
+const INTERNAL_KEY = process.env.INTERNAL_KEY || "";
+
+// -----------------------------
+// Support widget fixed options
+// -----------------------------
 const SUPPORT_OPTIONS = [
   {
     id: "scope",
@@ -65,91 +96,153 @@ const SUPPORT_OPTIONS = [
   },
 ];
 
+// -----------------------------
+// Helpers: validation
+// -----------------------------
+function isValidEmail(email) {
+  return typeof email === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function clampStr(v, max) {
+  if (typeof v !== "string") return "";
+  return v.trim().slice(0, max);
+}
+
+// -----------------------------
+// Rate limit (per-IP)
+// -----------------------------
+const RATE_WINDOW_MS = 60_000; // 1 minute
+const rateMap = new Map();
+
+function getClientIp(req) {
+  // trust proxy is enabled, but we still take the first forwarded IP safely
+  const fwd = (req.headers["x-forwarded-for"] || "").toString();
+  return fwd.split(",")[0].trim() || req.socket?.remoteAddress || "unknown";
+}
+
+function rateLimit(maxPerMin) {
+  return (req, res, next) => {
+    const ip = getClientIp(req);
+    const now = Date.now();
+    const record = rateMap.get(ip) || { count: 0, resetAt: now + RATE_WINDOW_MS };
+
+    if (now > record.resetAt) {
+      record.count = 0;
+      record.resetAt = now + RATE_WINDOW_MS;
+    }
+
+    record.count += 1;
+    rateMap.set(ip, record);
+
+    if (record.count > maxPerMin) {
+      return res.status(429).json({ ok: false, error: "Too many requests. Try again soon." });
+    }
+
+    next();
+  };
+}
+
+// cleanup to avoid memory growth
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, rec] of rateMap.entries()) {
+    if (now > rec.resetAt + RATE_WINDOW_MS) rateMap.delete(ip);
+  }
+}, 10 * 60_000).unref?.();
+
+// -----------------------------
+// Security: protect payment endpoint (server-to-server only)
+// -----------------------------
+function requireInternalKey(req, res, next) {
+  // Fail closed (safer)
+  if (!INTERNAL_KEY) {
+    return res.status(500).json({ ok: false, error: "Server INTERNAL_KEY is not configured." });
+  }
+  const key = req.headers["x-internal-key"];
+  if (!key || key !== INTERNAL_KEY) {
+    return res.status(401).json({ ok: false, error: "Unauthorized" });
+  }
+  next();
+}
+
+// -----------------------------
+// Routes
+// -----------------------------
 app.get("/health", (req, res) => {
   res.json({ ok: true, message: "API is running" });
 });
 
-app.get("/debug/env", (req, res) => {
-  res.json({
-    hasResendKey: !!process.env.RESEND_API_KEY,
-    supportFrom: process.env.SUPPORT_FROM || null,
-    supportInbox: process.env.SUPPORT_INBOX || null,
-  });
-});
-
-
-// ✅ fixed options for the help widget
 app.get("/api/support/options", (req, res) => {
   res.json({ ok: true, options: SUPPORT_OPTIONS });
 });
 
-function esc(s = "") {
-  return String(s)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-// ✅ talk to a human (ticket) — sends email to you + auto-reply to user
-app.post("/api/support/ticket", async (req, res) => {
+// Support ticket (public endpoint) — hardened:
+// - stricter rate limit
+// - honeypot
+// - input validation
+app.post("/api/support/ticket", rateLimit(5), async (req, res) => {
   try {
-    const { email, message, website, topic, pageUrl, relatedTopic, relatedCategory } = req.body || {};
+    const {
+      email,
+      message,
+      website,
+      topic,
+      pageUrl,
+      relatedTopic,
+      relatedCategory,
+      // honeypot field (make it hidden in frontend)
+      company,
+    } = req.body || {};
 
-    if (!email || !message) {
-      return res.status(400).json({ ok: false, error: "Email and message are required." });
+    // Honeypot: bots often fill hidden fields
+    if (company && String(company).trim()) {
+      return res.json({ ok: true }); // silent success (don’t help attacker)
     }
 
-    const inbox = process.env.SUPPORT_INBOX; // support@threatnest.com
-    const from = process.env.SUPPORT_FROM;   // e.g. "ThreatNest Support <onboarding@resend.dev>" or verified domain sender
+    const emailClean = clampStr(email, 200);
+    const messageClean = clampStr(message, 2000);
+    const websiteClean = clampStr(website || "—", 500);
+    const pageUrlClean = clampStr(pageUrl || "—", 500);
+    const topicClean = clampStr(relatedTopic || topic || "General", 120);
+    const categoryClean = clampStr(relatedCategory || "—", 120);
 
-    if (!process.env.RESEND_API_KEY || !inbox || !from) {
-      return res.status(500).json({
-        ok: false,
-        error: "Email is not configured on the server (missing env vars).",
-      });
+    if (!isValidEmail(emailClean)) {
+      return res.status(400).json({ ok: false, error: "Invalid email." });
+    }
+    if (!messageClean) {
+      return res.status(400).json({ ok: false, error: "Message is required." });
     }
 
-    const finalTopic = relatedTopic || topic || "General";
-    const finalCategory = relatedCategory || "—";
-    const finalWebsite = website || "—";
-    const finalPage = pageUrl || "—";
+    if (!resend || !SUPPORT_INBOX || !SUPPORT_FROM) {
+      return res.status(500).json({ ok: false, error: "Email is not configured on the server." });
+    }
 
-    // 1) Email to YOU (support inbox)
+    // 1) Email to YOU
+    const t1 = supportTeamTpl({
+      email: emailClean,
+      message: messageClean,
+      topic: topicClean,
+      category: categoryClean,
+      website: websiteClean,
+      pageUrl: pageUrlClean,
+    });
+
     await resend.emails.send({
-      from,
-      to: [inbox],
-      replyTo: email,
-      subject: `ThreatNest Support — ${finalTopic}`,
-      html: `
-        <div style="font-family:system-ui,Segoe UI,Roboto,Arial;line-height:1.55">
-          <h2 style="margin:0 0 12px">New Support Ticket</h2>
-          <p style="margin:0 0 6px"><b>From:</b> ${esc(email)}</p>
-          <p style="margin:0 0 6px"><b>Topic:</b> ${esc(finalTopic)}</p>
-          <p style="margin:0 0 6px"><b>Category:</b> ${esc(finalCategory)}</p>
-          <p style="margin:0 0 6px"><b>Website:</b> ${esc(finalWebsite)}</p>
-          <p style="margin:0 0 12px"><b>Page:</b> ${esc(finalPage)}</p>
-          <hr/>
-          <pre style="white-space:pre-wrap;margin:12px 0 0">${esc(message)}</pre>
-        </div>
-      `,
+      from: SUPPORT_FROM,
+      to: [SUPPORT_INBOX],
+      replyTo: emailClean,
+      subject: t1.subject,
+      react: t1.react,
     });
 
     // 2) Auto-reply to USER
+    const t2 = supportAutoTpl({ message: messageClean });
+
     await resend.emails.send({
-      from,
-      to: [email],
-      subject: "We received your message — ThreatNest",
-      html: `
-        <div style="font-family:system-ui,Segoe UI,Roboto,Arial;line-height:1.55">
-          <p>Hi,</p>
-          <p>Thanks for contacting <b>ThreatNest</b>. We received your message and will reply as soon as possible (usually within <b>24 hours</b>).</p>
-          <p style="margin:16px 0 8px"><b>Your message:</b></p>
-          <pre style="white-space:pre-wrap;margin:0">${esc(message)}</pre>
-          <p style="margin-top:16px">— ThreatNest Support</p>
-        </div>
-      `,
+      from: SUPPORT_FROM,
+      to: [emailClean],
+      subject: t2.subject,
+      react: t2.react,
     });
 
     return res.json({ ok: true });
@@ -159,10 +252,70 @@ app.post("/api/support/ticket", async (req, res) => {
   }
 });
 
-// keep your existing contact route if you want
-app.post("/api/contact", (req, res) => {
-  res.json({ ok: true });
+// Payment status email (PRIVATE endpoint):
+// - MUST be called server-to-server (never from browser)
+// - protected by INTERNAL_KEY header
+// - higher rate limit is ok (internal)
+app.post("/api/payment/status", requireInternalKey, rateLimit(20), async (req, res) => {
+  try {
+    const { email, status, clientName, amount, orderId, reason } = req.body || {};
+
+    const emailClean = clampStr(email, 200);
+    const statusClean = clampStr(status, 20).toLowerCase();
+    const clientNameClean = clampStr(clientName || "", 120);
+    const orderIdClean = clampStr(orderId || "", 120);
+    const reasonClean = clampStr(reason || "", 300);
+
+    // amount could be string/number — just clamp as string for display
+    const amountClean = clampStr(amount != null ? String(amount) : "", 50);
+
+    if (!isValidEmail(emailClean)) {
+      return res.status(400).json({ ok: false, error: "Invalid email." });
+    }
+
+    if (!statusClean) {
+      return res.status(400).json({ ok: false, error: "status is required." });
+    }
+
+    if (!resend || !SUPPORT_FROM) {
+      return res.status(500).json({ ok: false, error: "Email is not configured on the server." });
+    }
+
+    if (statusClean === "success") {
+      const t = paymentSuccessTpl({ clientName: clientNameClean, amount: amountClean, orderId: orderIdClean });
+
+      await resend.emails.send({
+        from: SUPPORT_FROM,
+        to: [emailClean],
+        subject: t.subject,
+        react: t.react,
+      });
+
+      return res.json({ ok: true });
+    }
+
+    if (statusClean === "failed") {
+      const t = paymentFailedTpl({ clientName: clientNameClean, orderId: orderIdClean, reason: reasonClean });
+
+      await resend.emails.send({
+        from: SUPPORT_FROM,
+        to: [emailClean],
+        subject: t.subject,
+        react: t.react,
+      });
+
+      return res.json({ ok: true });
+    }
+
+    return res.status(400).json({ ok: false, error: "status must be: success | failed" });
+  } catch (err) {
+    console.error("payment status email error:", err);
+    return res.status(500).json({ ok: false, error: "Failed to send email." });
+  }
 });
 
+// -----------------------------
+// Start
+// -----------------------------
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log("API running on", port));
