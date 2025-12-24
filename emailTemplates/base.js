@@ -63,7 +63,7 @@ export function EmailBase({ title, preview, children }) {
 
           React.createElement(
             "div",
-            { style: { display: "flex", alignItems: "center", gap: "18px" } },
+            { style: { display: "flex", alignItems: "center" } },
 
             React.createElement(
               "div",
@@ -78,6 +78,7 @@ export function EmailBase({ title, preview, children }) {
                   justifyContent: "center",
                   background: "#ffffff",
                   overflow: "hidden",
+                  marginRight: "14px",
                 },
               },
               React.createElement("img", {
@@ -155,10 +156,7 @@ export function EmailBase({ title, preview, children }) {
             " · ",
             React.createElement(
               "a",
-              {
-                href: `mailto:${BRAND.supportEmail}`,
-                style: { color: "#2563eb", textDecoration: "none" },
-              },
+              { href: `mailto:${BRAND.supportEmail}`, style: { color: "#2563eb", textDecoration: "none" } },
               BRAND.supportEmail
             )
           ),
