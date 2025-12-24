@@ -1,5 +1,5 @@
 import React from "react";
-import EmailBase from "./base.js";
+import EmailBase, { safe } from "./base.js";
 
 export default function supportAutoTpl({ message }) {
   const safeMsg = (message || "").toString();
@@ -18,7 +18,6 @@ export default function supportAutoTpl({ message }) {
           { key: 1, style: { margin: "0 0 12px" } },
           "Thanks for contacting ThreatNest. We received your message and will reply as soon as possible (usually within 24 hours)."
         ),
-
         React.createElement(
           "div",
           {
@@ -33,13 +32,9 @@ export default function supportAutoTpl({ message }) {
           },
           safeMsg
         ),
-
         React.createElement(
           "p",
-          {
-            key: 3,
-            style: { margin: "14px 0 0", color: "rgba(255,255,255,0.75)" },
-          },
+          { key: 3, style: { margin: "14px 0 0", color: "rgba(255,255,255,0.75)" } },
           "— ThreatNest Support"
         ),
       ]

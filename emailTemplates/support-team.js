@@ -1,5 +1,5 @@
 import React from "react";
-import EmailBase from "./base.js";
+import EmailBase, { safe } from "./base.js";
 
 export default function supportTeamTpl({ email, message, topic, category, website, pageUrl }) {
   const safe = (v, dash = "—") => (v && String(v).trim() ? String(v).trim() : dash);

@@ -1,13 +1,16 @@
 import React from "react";
 
-const BRAND = {
+export const BRAND = {
   name: "ThreatNest",
   site: "https://threatnest.com",
-  logo: "https://threatnest.com/assets/logo/threatnest-logo.png", // must be public
+  logo: "https://threatnest.com/assets/logo/threatnest-logo.png",
   supportEmail: "support@threatnest.com",
 };
 
-export default function EmailBase({ title, preview, children }) {
+export const safe = (v, dash = "—") =>
+  v && String(v).trim() ? String(v).trim() : dash;
+
+export function EmailBase({ title, preview, children }) {
   const kids = Array.isArray(children) ? children : [children];
 
   return React.createElement(
@@ -111,8 +114,14 @@ export default function EmailBase({ title, preview, children }) {
           " · ",
           React.createElement("span", null, BRAND.supportEmail)
         ),
-        React.createElement("div", { style: { marginTop: "8px" } }, "If you did not request this email, ignore it.")
+        React.createElement(
+          "div",
+          { style: { marginTop: "8px" } },
+          "If you did not request this email, ignore it."
+        )
       )
     )
   );
 }
+
+export default EmailBase;
