@@ -3,7 +3,7 @@ import React from "react";
 export const BRAND = {
   name: "ThreatNest",
   site: "https://threatnest.com",
-  logo: "https://threatnest.com/assets/logo/threatnest-logo-black.png",
+  logo: "https://threatnest.com/assets/logo/black.png",
   supportEmail: "support@threatnest.com",
 };
 
