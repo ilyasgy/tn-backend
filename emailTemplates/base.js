@@ -65,42 +65,44 @@ export function EmailBase({ title, preview, children }) {
             "div",
             { style: { display: "flex", alignItems: "center" } },
 
-React.createElement(
-  "div",
-  {
-    style: {
-      width: "58px",
-      height: "58px",
-      borderRadius: "14px",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      background: "#ffffff",
-      overflow: "hidden",
-      marginRight: "1px",
-    },
-  },
-  React.createElement("img", {
-    src: BRAND.logo,
-    alt: BRAND.name,
-    width: 57,
-    height: 57,
-    style: {
-      display: "block",
-      width: "57px",
-      height: "57px",
-      objectFit: "contain",
-      objectPosition: "center",
-    },
-  })
-),
-
-
+            React.createElement(
+              "div",
+              {
+                style: {
+                  width: "58px",
+                  height: "58px",
+                  borderRadius: "14px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "#ffffff",
+                  overflow: "hidden",
+                  marginRight: "10px",
+                },
+              },
+              React.createElement("img", {
+                src: BRAND.logo,
+                alt: BRAND.name,
+                width: 57,
+                height: 57,
+                style: {
+                  display: "block",
+                  width: "57px",
+                  height: "57px",
+                  objectFit: "contain",
+                  objectPosition: "center",
+                },
+              })
+            ),
 
             React.createElement(
               "div",
-              { style: { lineHeight: 1.2,
-            marginTop: "4px", } },
+              {
+                style: {
+                  lineHeight: 1.2,
+                  transform: "translateY(2px)",
+                },
+              },
               React.createElement(
                 "div",
                 {
@@ -158,7 +160,10 @@ React.createElement(
             " · ",
             React.createElement(
               "a",
-              { href: `mailto:${BRAND.supportEmail}`, style: { color: "#2563eb", textDecoration: "none" } },
+              {
+                href: `mailto:${BRAND.supportEmail}`,
+                style: { color: "#2563eb", textDecoration: "none" },
+              },
               BRAND.supportEmail
             )
           ),
