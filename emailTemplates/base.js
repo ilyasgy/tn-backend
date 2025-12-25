@@ -69,8 +69,8 @@ React.createElement(
   "div",
   {
     style: {
-      width: "58px",
-      height: "58px",
+      width: "65px",
+      height: "65px",
       borderRadius: "14px",
       display: "flex",
       alignItems: "center",
@@ -83,12 +83,12 @@ React.createElement(
   React.createElement("img", {
     src: BRAND.logo,
     alt: BRAND.name,
-    width: 57,
-    height: 57,
+    width: 60,
+    height: 60,
     style: {
       display: "block",
-      width: "57px",
-      height: "57px",
+      width: "60px",
+      height: "60px",
       objectFit: "contain",
       objectPosition: "center",
     },
@@ -123,7 +123,7 @@ React.createElement(
 
         React.createElement(
           "div",
-          { style: { padding: "20px 20px" } },
+          { style: { padding: "18px 20px" } },
           React.createElement(
             "h2",
             { style: { margin: "0 0 14px", fontSize: "18px", fontWeight: 800 } },
