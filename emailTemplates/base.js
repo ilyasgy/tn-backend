@@ -51,61 +51,74 @@ export function EmailBase({ title, preview, children }) {
           },
         },
 
+        React.createElement(
+          "div",
+          {
+            style: {
+              padding: "15px 17px",
+              borderBottom: "1px solid #e5e7eb",
+              background: "#ffffff",
+            },
+          },
+
+          React.createElement(
+            "div",
+            { style: { display: "flex", alignItems: "center" } },
+
 React.createElement(
   "div",
-  { style: { display: "flex", alignItems: "flex-start" } },
-
-  React.createElement(
-    "div",
-    {
-      style: {
-        width: "60px",
-        height: "60px",
-        borderRadius: "14px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "#ffffff",
-        overflow: "hidden",
-        marginRight: "12px",
-      },
+  {
+    style: {
+      width: "56px",
+      height: "56px",
+      borderRadius: "14px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      background: "#ffffff",
+      overflow: "hidden",
+      marginRight: "  px",
     },
-    React.createElement("img", {
-      src: BRAND.logo,
-      alt: BRAND.name,
-      width: 44,
-      height: 44,
-      style: {
-        display: "block",
-        width: "44px",
-        height: "44px",
-        objectFit: "contain",
-      },
-    })
-  ),
-
-  React.createElement(
-    "div",
-    { style: { marginTop: "6px" } },
-    React.createElement(
-      "div",
-      {
-        style: {
-          fontWeight: 700,
-          fontSize: "15px",
-          marginBottom: "4px",
-        },
-      },
-      `${BRAND.name} Support`
-    ),
-    React.createElement(
-      "div",
-      { style: { fontSize: "12px", color: "#6b7280" } },
-      "Web development agency"
-    )
-  )
+  },
+  React.createElement("img", {
+    src: BRAND.logo,
+    alt: BRAND.name,
+    width: 53,
+    height: 53,
+    style: {
+      display: "block",
+      width: "53px",
+      height: "53px",
+      objectFit: "contain",
+      objectPosition: "center",
+    },
+  })
 ),
 
+
+
+            React.createElement(
+              "div",
+              { style: { lineHeight: 1.2 } },
+              React.createElement(
+                "div",
+                {
+                  style: {
+                    fontWeight: 700,
+                    fontSize: "14px",
+                    marginBottom: "5px",
+                  },
+                },
+                `${BRAND.name} Support`
+              ),
+              React.createElement(
+                "div",
+                { style: { fontSize: "12px", color: "#6b7280" } },
+                "Web development agency"
+              )
+            )
+          )
+        ),
 
         React.createElement(
           "div",
