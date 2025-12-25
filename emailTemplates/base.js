@@ -69,15 +69,15 @@ React.createElement(
   "div",
   {
     style: {
-      width: "56px",
-      height: "56px",
+      width: "60px",
+      height: "60px",
       borderRadius: "14px",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
       background: "#ffffff",
       overflow: "hidden",
-      marginRight: "  px",
+      marginRight: "10px",
     },
   },
   React.createElement("img", {
@@ -87,8 +87,8 @@ React.createElement(
     height: 53,
     style: {
       display: "block",
-      width: "53px",
-      height: "53px",
+      width: "55px",
+      height: "55px",
       objectFit: "contain",
       objectPosition: "center",
     },
@@ -99,7 +99,8 @@ React.createElement(
 
             React.createElement(
               "div",
-              { style: { lineHeight: 1.2 } },
+              { style: { lineHeight: 1.2,
+            marginTop: "2px", } },
               React.createElement(
                 "div",
                 {
