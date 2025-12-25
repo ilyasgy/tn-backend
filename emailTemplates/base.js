@@ -77,14 +77,14 @@ React.createElement(
       justifyContent: "center",
       background: "#ffffff",
       overflow: "hidden",
-      marginRight: "0",
+      marginRight: "1px",
     },
   },
   React.createElement("img", {
     src: BRAND.logo,
     alt: BRAND.name,
-    width: 53,
-    height: 53,
+    width: 57,
+    height: 57,
     style: {
       display: "block",
       width: "57px",
@@ -107,7 +107,7 @@ React.createElement(
                   style: {
                     fontWeight: 700,
                     fontSize: "14px",
-                    marginBottom: "5px",
+                    marginBottom: "3px",
                   },
                 },
                 `${BRAND.name} Support`
