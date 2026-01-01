@@ -1,20 +1,11 @@
 import React from "react";
 import EmailBase, { safe } from "./base.js";
 
-export default function supportAutoTpl({
-  email,
-  topic,
-  category,
-  website,
-  pageUrl,
-  message,
-}) {
+export default function supportAutoTpl({ name, email, website, message }) {
   const rows = [
-    ["Your email", safe(email)],
-    ["Topic", safe(topic, "General")],
-    ["Category", safe(category)],
-    ["Website", safe(website)],
-    ["Page URL", safe(pageUrl)],
+    ["Email", safe(email)],
+    ["Name", safe(name)],
+    ["Website", safe(website, "—")],
   ];
 
   const cardStyle = {
@@ -25,14 +16,14 @@ export default function supportAutoTpl({
   };
 
   const labelStyle = {
-    width: "110px",
+    width: "92px",
     color: "#4b5563",
     fontWeight: 700,
     lineHeight: "20px",
     flexShrink: 0,
   };
 
-  const valueStyle = {
+  const valueWrapStyle = {
     color: "#111827",
     lineHeight: "20px",
     wordBreak: "break-word",
@@ -61,18 +52,6 @@ export default function supportAutoTpl({
     lineHeight: 1.75,
   };
 
-  const buttonWrap = { marginTop: "14px" };
-  const button = {
-    display: "inline-block",
-    background: "#111827",
-    color: "#ffffff",
-    padding: "10px 14px",
-    borderRadius: "10px",
-    textDecoration: "none",
-    fontWeight: 800,
-    fontSize: "13px",
-  };
-
   return {
     subject: "We received your message — ThreatNest",
     react: React.createElement(
@@ -93,17 +72,15 @@ export default function supportAutoTpl({
           "div",
           { key: "details", style: { ...cardStyle, marginBottom: "12px" } },
           rows.map(([label, value], i) => {
-            const isEmail = label === "Your email" && String(value).includes("@");
-            const isUrl =
-              (label === "Website" || label === "Page URL") &&
-              typeof value === "string" &&
-              value.startsWith("http");
+            const s = (value || "").toString();
+            const isEmail = label === "Email" && s.includes("@");
+            const isUrl = label === "Website" && s.startsWith("http");
 
             const valueNode = isEmail
-              ? React.createElement("a", { href: `mailto:${value}`, style: linkStyle }, value)
+              ? React.createElement("a", { href: `mailto:${s}`, style: linkStyle }, s)
               : isUrl
-              ? React.createElement("a", { href: value, style: linkStyle }, value)
-              : React.createElement("span", { style: valueStyle }, value);
+              ? React.createElement("a", { href: s, style: linkStyle }, s)
+              : React.createElement("span", null, safe(s));
 
             return React.createElement(
               "div",
@@ -117,7 +94,7 @@ export default function supportAutoTpl({
                 },
               },
               React.createElement("div", { style: labelStyle }, `${label}:`),
-              React.createElement("div", { style: valueStyle }, valueNode)
+              React.createElement("div", { style: valueWrapStyle }, valueNode)
             );
           })
         ),
@@ -126,24 +103,8 @@ export default function supportAutoTpl({
         React.createElement(
           "div",
           { key: "msg", style: cardStyle },
-          React.createElement("div", { style: msgTitleStyle }, "Your message"),
+          React.createElement("div", { style: msgTitleStyle }, "Message"),
           React.createElement("p", { style: msgBodyStyle }, safe(message, ""))
-        ),
-
-        // CTA
-        React.createElement(
-          "div",
-          { key: "cta", style: buttonWrap },
-          React.createElement(
-            "a",
-            { href: "https://threatnest.com/contact", style: button },
-            "Add more details (optional)"
-          ),
-          React.createElement(
-            "div",
-            { style: { marginTop: "8px", fontSize: "12px", color: "#6b7280" } },
-            "Tip: reply to this email with screenshots or extra context if needed."
-          )
         ),
       ]
     ),

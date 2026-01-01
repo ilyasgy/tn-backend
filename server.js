@@ -28,9 +28,6 @@ app.use(
     origin: [
       "https://threatnest.com",
       "https://www.threatnest.com",
-      // uncomment for local testing
-      // "http://localhost:3000",
-      // "http://localhost:5173",
     ],
     methods: ["GET", "POST", "OPTIONS"],
     credentials: true,
@@ -115,7 +112,6 @@ const RATE_WINDOW_MS = 60_000; // 1 minute
 const rateMap = new Map();
 
 function getClientIp(req) {
-  // trust proxy is enabled, but we still take the first forwarded IP safely
   const fwd = (req.headers["x-forwarded-for"] || "").toString();
   return fwd.split(",")[0].trim() || req.socket?.remoteAddress || "unknown";
 }
@@ -142,7 +138,6 @@ function rateLimit(maxPerMin) {
   };
 }
 
-// cleanup to avoid memory growth
 setInterval(() => {
   const now = Date.now();
   for (const [ip, rec] of rateMap.entries()) {
@@ -176,35 +171,22 @@ app.get("/api/support/options", (req, res) => {
   res.json({ ok: true, options: SUPPORT_OPTIONS });
 });
 
-// Support ticket (public endpoint) — hardened:
-// - stricter rate limit
-// - honeypot
-// - input validation
+
+
 app.post("/api/support/ticket", rateLimit(5), async (req, res) => {
   try {
-    const {
-      email,
-      message,
-      website,
-      topic,
-      pageUrl,
-      relatedTopic,
-      relatedCategory,
-      // honeypot field (make it hidden in frontend)
-      company,
-    } = req.body || {};
+    const { name, email, message, website, pageUrl, company } = req.body || {};
 
-    // Honeypot: bots often fill hidden fields
+    // Honeypot
     if (company && String(company).trim()) {
-      return res.json({ ok: true }); // silent success (don’t help attacker)
+      return res.json({ ok: true });
     }
 
+    const nameClean = clampStr(name || "", 120);
     const emailClean = clampStr(email, 200);
     const messageClean = clampStr(message, 2000);
-    const websiteClean = clampStr(website || "—", 500);
-    const pageUrlClean = clampStr(pageUrl || "—", 500);
-    const topicClean = clampStr(relatedTopic || topic || "General", 120);
-    const categoryClean = clampStr(relatedCategory || "—", 120);
+    const websiteClean = clampStr(website || "", 500);
+    const pageUrlClean = clampStr(pageUrl || "", 500);
 
     if (!isValidEmail(emailClean)) {
       return res.status(400).json({ ok: false, error: "Invalid email." });
@@ -219,12 +201,11 @@ app.post("/api/support/ticket", rateLimit(5), async (req, res) => {
 
     // 1) Email to YOU
     const t1 = supportTeamTpl({
+      name: nameClean,
       email: emailClean,
+      website: websiteClean || "—",
+      pageUrl: pageUrlClean || "—",
       message: messageClean,
-      topic: topicClean,
-      category: categoryClean,
-      website: websiteClean,
-      pageUrl: pageUrlClean,
     });
 
     await resend.emails.send({
@@ -236,7 +217,12 @@ app.post("/api/support/ticket", rateLimit(5), async (req, res) => {
     });
 
     // 2) Auto-reply to USER
-    const t2 = supportAutoTpl({ message: messageClean });
+    const t2 = supportAutoTpl({
+      name: nameClean,
+      email: emailClean,
+      website: websiteClean || "",
+      message: messageClean,
+    });
 
     await resend.emails.send({
       from: SUPPORT_FROM,
