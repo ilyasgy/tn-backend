@@ -1,8 +1,77 @@
 import React from "react";
 import EmailBase, { safe } from "./base.js";
 
-export default function supportAutoTpl({ message }) {
-  const safeMsg = (message || "").toString();
+export default function supportAutoTpl({
+  email,
+  topic,
+  category,
+  website,
+  pageUrl,
+  message,
+}) {
+  const rows = [
+    ["Your email", safe(email)],
+    ["Topic", safe(topic, "General")],
+    ["Category", safe(category)],
+    ["Website", safe(website)],
+    ["Page URL", safe(pageUrl)],
+  ];
+
+  const cardStyle = {
+    background: "#ffffff",
+    border: "1px solid #e5e7eb",
+    borderRadius: "12px",
+    padding: "16px",
+  };
+
+  const labelStyle = {
+    width: "110px",
+    color: "#4b5563",
+    fontWeight: 700,
+    lineHeight: "20px",
+    flexShrink: 0,
+  };
+
+  const valueStyle = {
+    color: "#111827",
+    lineHeight: "20px",
+    wordBreak: "break-word",
+    overflowWrap: "anywhere",
+  };
+
+  const linkStyle = {
+    color: "#2563eb",
+    fontWeight: 800,
+    textDecoration: "none",
+    wordBreak: "break-word",
+    overflowWrap: "anywhere",
+  };
+
+  const msgTitleStyle = {
+    margin: "0 0 10px",
+    fontSize: "14px",
+    fontWeight: 900,
+    color: "#111827",
+  };
+
+  const msgBodyStyle = {
+    margin: 0,
+    color: "#374151",
+    whiteSpace: "pre-wrap",
+    lineHeight: 1.75,
+  };
+
+  const buttonWrap = { marginTop: "14px" };
+  const button = {
+    display: "inline-block",
+    background: "#111827",
+    color: "#ffffff",
+    padding: "10px 14px",
+    borderRadius: "10px",
+    textDecoration: "none",
+    fontWeight: 800,
+    fontSize: "13px",
+  };
 
   return {
     subject: "We received your message — ThreatNest",
@@ -15,27 +84,66 @@ export default function supportAutoTpl({ message }) {
       [
         React.createElement(
           "p",
-          { key: 1, style: { margin: "0 0 12px" } },
-          "Thanks for contacting ThreatNest. We received your message and will reply as soon as possible (usually within 24 hours)."
+          { key: "p1", style: { margin: "0 0 12px", color: "#111827" } },
+          "Thanks for contacting ThreatNest — we received your message. We usually reply within 24 hours."
         ),
+
+        // DETAILS
         React.createElement(
           "div",
-          {
-            key: 2,
-            style: {
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: "12px",
-              padding: "12px 14px",
-              whiteSpace: "pre-wrap",
-            },
-          },
-          safeMsg
+          { key: "details", style: { ...cardStyle, marginBottom: "12px" } },
+          rows.map(([label, value], i) => {
+            const isEmail = label === "Your email" && String(value).includes("@");
+            const isUrl =
+              (label === "Website" || label === "Page URL") &&
+              typeof value === "string" &&
+              value.startsWith("http");
+
+            const valueNode = isEmail
+              ? React.createElement("a", { href: `mailto:${value}`, style: linkStyle }, value)
+              : isUrl
+              ? React.createElement("a", { href: value, style: linkStyle }, value)
+              : React.createElement("span", { style: valueStyle }, value);
+
+            return React.createElement(
+              "div",
+              {
+                key: i,
+                style: {
+                  display: "flex",
+                  gap: "14px",
+                  padding: "8px 0",
+                  borderBottom: i === rows.length - 1 ? "none" : "1px solid #f3f4f6",
+                },
+              },
+              React.createElement("div", { style: labelStyle }, `${label}:`),
+              React.createElement("div", { style: valueStyle }, valueNode)
+            );
+          })
         ),
+
+        // MESSAGE
         React.createElement(
-          "p",
-          { key: 3, style: { margin: "14px 0 0", color: "rgba(255,255,255,0.75)" } },
-          "— ThreatNest Support"
+          "div",
+          { key: "msg", style: cardStyle },
+          React.createElement("div", { style: msgTitleStyle }, "Your message"),
+          React.createElement("p", { style: msgBodyStyle }, safe(message, ""))
+        ),
+
+        // CTA
+        React.createElement(
+          "div",
+          { key: "cta", style: buttonWrap },
+          React.createElement(
+            "a",
+            { href: "https://threatnest.com/contact", style: button },
+            "Add more details (optional)"
+          ),
+          React.createElement(
+            "div",
+            { style: { marginTop: "8px", fontSize: "12px", color: "#6b7280" } },
+            "Tip: reply to this email with screenshots or extra context if needed."
+          )
         ),
       ]
     ),

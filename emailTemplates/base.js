@@ -1,176 +1,149 @@
 import React from "react";
 
-export const BRAND = {
+export function safe(v, fallback = "—") {
+  if (v === null || v === undefined) return fallback;
+  const s = String(v).trim();
+  return s.length ? s : fallback;
+}
+
+// Put your real, absolute URL here
+const BRAND = {
   name: "ThreatNest",
   site: "https://threatnest.com",
-  logo: "https://threatnest.com/assets/logo/black.png",
-  supportEmail: "support@threatnest.com",
+  // MUST be absolute URL for email clients
+  logo: "https://threatnest.com/logo.png",
 };
 
-export const safe = (v, dash = "—") =>
-  v && String(v).trim() ? String(v).trim() : dash;
+export default function EmailBase({ title, preview, children }) {
+  const outer = {
+    background: "#f3f4f6", // gray-100
+    padding: "28px 12px",
+    fontFamily:
+      '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+  };
 
-export function EmailBase({ title, preview, children }) {
-  const kids = Array.isArray(children) ? children : [children];
+  const container = {
+    maxWidth: "640px",
+    margin: "0 auto",
+  };
+
+  const card = {
+    background: "#ffffff",
+    border: "1px solid #e5e7eb",
+    borderRadius: "16px",
+    overflow: "hidden",
+    boxShadow: "0 1px 0 rgba(17,24,39,0.04)",
+  };
+
+  const header = {
+    padding: "18px 18px 12px",
+    borderBottom: "1px solid #f3f4f6",
+    background: "#ffffff",
+  };
+
+  const brandRow = {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+  };
+
+  const logoStyle = {
+    width: "36px",
+    height: "36px",
+    borderRadius: "10px",
+    display: "block",
+    objectFit: "contain",
+    background: "#ffffff",
+    border: "1px solid #eef2f7",
+  };
+
+  const titleStyle = {
+    margin: "6px 0 0",
+    fontSize: "16px",
+    fontWeight: 800,
+    color: "#111827",
+    letterSpacing: "-0.01em",
+  };
+
+  const body = {
+    padding: "18px",
+    color: "#111827",
+    fontSize: "14px",
+    lineHeight: 1.7,
+  };
+
+  const footer = {
+    padding: "14px 18px",
+    borderTop: "1px solid #f3f4f6",
+    color: "#6b7280",
+    fontSize: "12px",
+    lineHeight: 1.5,
+  };
+
+  // Preheader text (hidden in body, shown in inbox previews)
+  const preheaderStyle = {
+    display: "none",
+    fontSize: "1px",
+    color: "#f3f4f6",
+    lineHeight: "1px",
+    maxHeight: "0px",
+    maxWidth: "0px",
+    opacity: 0,
+    overflow: "hidden",
+  };
 
   return React.createElement(
     "div",
-    { style: { background: "#f8f7f4", padding: "0", margin: "0" } },
-
+    { style: outer },
     React.createElement(
       "div",
-      {
-        style: {
-          display: "none",
-          maxHeight: 0,
-          overflow: "hidden",
-          opacity: 0,
-          color: "transparent",
-        },
-      },
-      preview || ""
-    ),
-
-    React.createElement(
-      "div",
-      { style: { padding: "24px 12px" } },
-
+      { style: container },
+      React.createElement("div", { style: preheaderStyle }, safe(preview, "")),
       React.createElement(
         "div",
-        {
-          style: {
-            maxWidth: "640px",
-            margin: "0 auto",
-            background: "#ffffff",
-            border: "1px solid #e5e7eb",
-            borderRadius: "14px",
-            overflow: "hidden",
-            boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
-            fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
-            color: "#111827",
-          },
-        },
-
+        { style: card },
         React.createElement(
           "div",
-          {
-            style: {
-              padding: "15px 17px",
-              borderBottom: "1px solid #e5e7eb",
-              background: "#ffffff",
-            },
-          },
-
+          { style: header },
           React.createElement(
             "div",
-            { style: { display: "flex", alignItems: "center" } },
-
-React.createElement(
-  "div",
-  {
-    style: {
-      width: "65px",
-      height: "65px",
-      borderRadius: "14px",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      background: "#ffffff",
-      overflow: "hidden",
-      marginRight: "1px",
-    },
-  },
-  React.createElement("img", {
-    src: BRAND.logo,
-    alt: BRAND.name,
-    width: 60,
-    height: 60,
-    style: {
-      display: "block",
-      width: "60px",
-      height: "60px",
-      objectFit: "contain",
-      objectPosition: "center",
-    },
-  })
-),
-
-
-
+            { style: brandRow },
+            React.createElement(
+              "a",
+              { href: BRAND.site, style: { textDecoration: "none" } },
+              React.createElement("img", {
+                src: BRAND.logo,
+                width: 36,
+                height: 36,
+                alt: BRAND.name,
+                style: logoStyle,
+              })
+            ),
             React.createElement(
               "div",
-              { style: { lineHeight: 1.2,
-            marginTop: "6px", } },
-              React.createElement(
-                "div",
-                {
-                  style: {
-                    fontWeight: 700,
-                    fontSize: "14px",
-                    marginBottom: "3px",
-                  },
-                },
-                `${BRAND.name} Support`
-              ),
+              null,
+              React.createElement("div", { style: { fontSize: "13px", fontWeight: 800, color: "#111827" } }, BRAND.name),
               React.createElement(
                 "div",
                 { style: { fontSize: "12px", color: "#6b7280" } },
-                "Web development agency"
+                safe(title, "")
               )
             )
-          )
+          ),
+          React.createElement("div", { style: titleStyle }, safe(title, ""))
         ),
-
+        React.createElement("div", { style: body }, children),
         React.createElement(
           "div",
-          { style: { padding: "18px 20px" } },
+          { style: footer },
+          "If you didn’t request this, you can ignore this email. ",
           React.createElement(
-            "h2",
-            { style: { margin: "0 0 14px", fontSize: "18px", fontWeight: 800 } },
-            title
-          ),
-          React.createElement(
-            "div",
-            { style: { fontSize: "14px", lineHeight: 1.7 } },
-            ...kids
-          )
-        ),
-
-        React.createElement(
-          "div",
-          {
-            style: {
-              padding: "16px 20px",
-              borderTop: "1px solid #e5e7eb",
-              fontSize: "12px",
-              color: "#6b7280",
-              background: "#ffffff",
-            },
-          },
-          React.createElement(
-            "div",
-            null,
-            React.createElement(
-              "a",
-              { href: BRAND.site, style: { color: "#111827", textDecoration: "none" } },
-              BRAND.site
-            ),
-            " · ",
-            React.createElement(
-              "a",
-              { href: `mailto:${BRAND.supportEmail}`, style: { color: "#2563eb", textDecoration: "none" } },
-              BRAND.supportEmail
-            )
-          ),
-          React.createElement(
-            "div",
-            { style: { marginTop: "8px", color: "#9ca3af" } },
-            "If you did not request this email, ignore it."
+            "a",
+            { href: BRAND.site, style: { color: "#2563eb", textDecoration: "none", fontWeight: 700 } },
+            BRAND.site.replace("https://", "")
           )
         )
       )
     )
   );
 }
-
-export default EmailBase;
