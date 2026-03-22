@@ -10,7 +10,7 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
       company,
     } = req.body || {};
 
-    // honeypot
+    // Honeypot
     if (company && String(company).trim()) {
       return res.json({ ok: true });
     }
@@ -42,49 +42,52 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
     }
 
     const startMessage = [
-      "Start Request",
-      "",
       `Full Name: ${fullNameClean}`,
-      `Email: ${emailClean}`,
-      `Website: ${websiteClean}`,
       `Platform: ${platformClean || "Not provided"}`,
       "",
       "Specific Concerns:",
       concernsClean || "None provided",
       "",
       "Authorization:",
-      "The client confirmed they are the owner or authorized operator of the website and grant ThreatNest permission to perform a safe, non-destructive security assessment.",
+      "The client confirmed they are the owner or authorized operator of the website and granted ThreatNest permission to perform a safe, non-destructive security assessment.",
     ].join("\n");
 
-    // 1) Email to YOU using existing styled team template
+    // 1) Styled email to YOU
     const t1 = supportTeamTpl({
-      name: fullNameClean,
       email: emailClean,
-      website: websiteClean,
-      pageUrl: "/start",
+      website: websiteClean || "—",
+      pageUrl: "https://threatnest.com/start",
+      topic: "Start Request",
+      category: "Start",
       message: startMessage,
+      title: "New Start Request",
+      preview: "A new start request was submitted.",
     });
 
     await resend.emails.send({
       from: SUPPORT_FROM,
       to: [SUPPORT_INBOX],
       replyTo: emailClean,
-      subject: `Start Request — ${websiteClean}`,
+      subject: t1.subject,
       react: t1.react,
     });
 
-    // 2) Auto-reply to USER using existing styled auto template
+    // 2) Styled auto-reply to USER
     const t2 = supportAutoTpl({
       name: fullNameClean,
       email: emailClean,
-      website: websiteClean,
+      website: websiteClean || "",
       message: "We received your start request and will review it shortly.",
+      title: "Start request received",
+      preview: "We got your start request and will review it shortly.",
+      intro: "Thanks for starting with ThreatNest — we received your request and will review it shortly.",
+      subject: "We received your start request — ThreatNest",
     });
 
     await resend.emails.send({
       from: SUPPORT_FROM,
       to: [emailClean],
-      subject: "ThreatNest — Start request received",
+      subject: t2.subject,
       react: t2.react,
     });
 
