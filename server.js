@@ -171,7 +171,112 @@ app.get("/api/support/options", (req, res) => {
   res.json({ ok: true, options: SUPPORT_OPTIONS });
 });
 
+app.post("/api/start/request", rateLimit(5), async (req, res) => {
+  try {
+    const {
+      fullName,
+      email,
+      website,
+      platform,
+      concerns,
+      authorization,
+      company,
 
+      // hidden for now / future toggle
+      testEmail,
+      testPassword,
+      limitedAccess,
+    } = req.body || {};
+
+    // honeypot
+    if (company && String(company).trim()) {
+      return res.json({ ok: true });
+    }
+
+    const fullNameClean = clampStr(fullName || "", 120);
+    const emailClean = clampStr(email || "", 200);
+    const websiteClean = clampStr(website || "", 500);
+    const platformClean = clampStr(platform || "", 120);
+    const concernsClean = clampStr(concerns || "", 2000);
+
+    const testEmailClean = clampStr(testEmail || "", 200);
+    const testPasswordClean = clampStr(testPassword || "", 200);
+
+    if (!fullNameClean) {
+      return res.status(400).json({ ok: false, error: "Full name is required." });
+    }
+
+    if (!isValidEmail(emailClean)) {
+      return res.status(400).json({ ok: false, error: "Invalid email." });
+    }
+
+    if (!websiteClean) {
+      return res.status(400).json({ ok: false, error: "Website is required." });
+    }
+
+    if (!authorization) {
+      return res.status(400).json({ ok: false, error: "Authorization is required." });
+    }
+
+    if (!resend || !SUPPORT_INBOX || !SUPPORT_FROM) {
+      return res.status(500).json({ ok: false, error: "Email is not configured on the server." });
+    }
+
+    const subject = `Start Request — ${websiteClean}`;
+
+    const teamHtml = `
+      <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111">
+        <h2 style="margin-bottom:16px;">New Start Request</h2>
+
+        <p><strong>Full Name:</strong> ${fullNameClean}</p>
+        <p><strong>Email:</strong> ${emailClean}</p>
+        <p><strong>Website:</strong> ${websiteClean}</p>
+        <p><strong>Platform:</strong> ${platformClean || "Not provided"}</p>
+
+        <h3 style="margin-top:24px;">Specific Concerns</h3>
+        <p>${(concernsClean || "None provided").replace(/\n/g, "<br/>")}</p>
+
+        <h3 style="margin-top:24px;">Authorization</h3>
+        <p>The client confirmed they are the owner or authorized operator of the website and authorized a safe, non-destructive security assessment.</p>
+
+        <h3 style="margin-top:24px;">Optional Test Account</h3>
+        <p><strong>Email / Username:</strong> ${testEmailClean || "Not provided"}</p>
+        <p><strong>Password:</strong> ${testPasswordClean ? "[Provided]" : "Not provided"}</p>
+        <p><strong>Limited access confirmed:</strong> ${limitedAccess ? "Yes" : "No"}</p>
+      </div>
+    `;
+
+    const userHtml = `
+      <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111">
+        <h2 style="margin-bottom:16px;">Start request received</h2>
+        <p>Hi ${fullNameClean},</p>
+        <p>We received your ThreatNest start request for <strong>${websiteClean}</strong>.</p>
+        <p>We’ll review the scope and reply with next steps before any work begins.</p>
+        <p style="margin-top:24px;">— ThreatNest</p>
+      </div>
+    `;
+
+    await resend.emails.send({
+      from: SUPPORT_FROM,
+      to: [SUPPORT_INBOX],
+      replyTo: emailClean,
+      subject,
+      html: teamHtml,
+    });
+
+    await resend.emails.send({
+      from: SUPPORT_FROM,
+      to: [emailClean],
+      subject: "ThreatNest — Start request received",
+      html: userHtml,
+    });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("start request error:", err);
+    return res.status(500).json({ ok: false, error: "Failed to send request." });
+  }
+});
 
 app.post("/api/support/ticket", rateLimit(5), async (req, res) => {
   try {
