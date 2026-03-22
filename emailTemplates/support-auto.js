@@ -1,12 +1,24 @@
 import React from "react";
 import EmailBase, { safe } from "./base.js";
 
-export default function supportAutoTpl({ name, email, website, message }) {
+export default function supportAutoTpl({
+  name,
+  email,
+  website,
+  message,
+  title,
+  preview,
+  intro,
+  subject,
+}) {
   const rows = [
     ["Email", safe(email)],
     ["Name", safe(name)],
     ["Website", safe(website, "—")],
-  ];
+  ].filter(([, value]) => {
+    const s = String(value || "").trim();
+    return s && s !== "—";
+  });
 
   const cardStyle = {
     background: "#ffffff",
@@ -52,27 +64,34 @@ export default function supportAutoTpl({ name, email, website, message }) {
     lineHeight: 1.75,
   };
 
+  const finalTitle = safe(title, "Message received");
+  const finalPreview = safe(preview, "We got your message and will reply within 24 hours.");
+  const finalIntro = safe(
+    intro,
+    "Thanks for contacting ThreatNest — we received your message. We usually reply within 24 hours."
+  );
+  const finalSubject = safe(subject, "We received your message — ThreatNest");
+
   return {
-    subject: "We received your message — ThreatNest",
+    subject: finalSubject,
     react: React.createElement(
       EmailBase,
       {
-        title: "Message received",
-        preview: "We got your message and will reply within 24 hours.",
+        title: finalTitle,
+        preview: finalPreview,
       },
       [
         React.createElement(
           "p",
           { key: "p1", style: { margin: "0 0 12px", color: "#111827" } },
-          "Thanks for contacting ThreatNest — we received your message. We usually reply within 24 hours."
+          finalIntro
         ),
 
-        // DETAILS
         React.createElement(
           "div",
           { key: "details", style: { ...cardStyle, marginBottom: "12px" } },
           rows.map(([label, value], i) => {
-            const s = (value || "").toString();
+            const s = String(value || "");
             const isEmail = label === "Email" && s.includes("@");
             const isUrl = label === "Website" && s.startsWith("http");
 
@@ -99,7 +118,6 @@ export default function supportAutoTpl({ name, email, website, message }) {
           })
         ),
 
-        // MESSAGE
         React.createElement(
           "div",
           { key: "msg", style: cardStyle },
