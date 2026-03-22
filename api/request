@@ -1,0 +1,96 @@
+app.post("/api/start/request", rateLimit(5), async (req, res) => {
+  try {
+    const {
+      fullName,
+      email,
+      website,
+      platform,
+      concerns,
+      authorization,
+      company,
+    } = req.body || {};
+
+    // honeypot
+    if (company && String(company).trim()) {
+      return res.json({ ok: true });
+    }
+
+    const fullNameClean = clampStr(fullName || "", 120);
+    const emailClean = clampStr(email || "", 200);
+    const websiteClean = clampStr(website || "", 500);
+    const platformClean = clampStr(platform || "", 120);
+    const concernsClean = clampStr(concerns || "", 2000);
+
+    if (!fullNameClean) {
+      return res.status(400).json({ ok: false, error: "Full name is required." });
+    }
+
+    if (!isValidEmail(emailClean)) {
+      return res.status(400).json({ ok: false, error: "Invalid email." });
+    }
+
+    if (!websiteClean) {
+      return res.status(400).json({ ok: false, error: "Website is required." });
+    }
+
+    if (!authorization) {
+      return res.status(400).json({ ok: false, error: "Authorization is required." });
+    }
+
+    if (!resend || !SUPPORT_INBOX || !SUPPORT_FROM) {
+      return res.status(500).json({ ok: false, error: "Email is not configured on the server." });
+    }
+
+    const startMessage = [
+      "Start Request",
+      "",
+      `Full Name: ${fullNameClean}`,
+      `Email: ${emailClean}`,
+      `Website: ${websiteClean}`,
+      `Platform: ${platformClean || "Not provided"}`,
+      "",
+      "Specific Concerns:",
+      concernsClean || "None provided",
+      "",
+      "Authorization:",
+      "The client confirmed they are the owner or authorized operator of the website and grant ThreatNest permission to perform a safe, non-destructive security assessment.",
+    ].join("\n");
+
+    // 1) Email to YOU using existing styled team template
+    const t1 = supportTeamTpl({
+      name: fullNameClean,
+      email: emailClean,
+      website: websiteClean,
+      pageUrl: "/start",
+      message: startMessage,
+    });
+
+    await resend.emails.send({
+      from: SUPPORT_FROM,
+      to: [SUPPORT_INBOX],
+      replyTo: emailClean,
+      subject: `Start Request — ${websiteClean}`,
+      react: t1.react,
+    });
+
+    // 2) Auto-reply to USER using existing styled auto template
+    const t2 = supportAutoTpl({
+      name: fullNameClean,
+      email: emailClean,
+      website: websiteClean,
+      message: "We received your start request and will review it shortly.",
+    });
+
+    await resend.emails.send({
+      from: SUPPORT_FROM,
+      to: [emailClean],
+      subject: "ThreatNest — Start request received",
+      react: t2.react,
+    });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("start request error:", err);
+    return res.status(500).json({ ok: false, error: "Failed to send request." });
+  }
+});
