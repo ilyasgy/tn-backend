@@ -18,15 +18,44 @@ import paymentFailedTpl from "./emailTemplates/payment-failed.js";
 // -----------------------------
 const app = express();
 
+const DEFAULT_ALLOWED_ORIGINS = [
+  "https://threatnest.com",
+  "https://www.threatnest.com",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "http://localhost:3001",
+  "http://127.0.0.1:3001",
+];
+
+function parseAllowedOrigins(...values) {
+  return values
+    .filter(Boolean)
+    .flatMap((value) => String(value).split(","))
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+const ALLOWED_ORIGINS = new Set([
+  ...DEFAULT_ALLOWED_ORIGINS,
+  ...parseAllowedOrigins(
+    process.env.ALLOWED_ORIGINS,
+    process.env.FRONTEND_URL,
+    process.env.APP_URL
+  ),
+]);
+
 app.set("trust proxy", 1);
 app.use(express.json({ limit: "200kb" }));
 
 app.use(
   cors({
-    origin: [
-      "https://threatnest.com",
-      "https://www.threatnest.com",
-    ],
+    origin(origin, callback) {
+      if (!origin || ALLOWED_ORIGINS.has(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("Not allowed by CORS"));
+    },
     methods: ["GET", "POST", "OPTIONS"],
     credentials: true,
   })
@@ -62,7 +91,7 @@ const SUPPORT_OPTIONS = [
     title: "Pricing & plans",
     keywords: ["price", "pricing", "cost", "plan"],
     answer:
-      "Pricing depends on your website size and scope. Send your site URL and platform and we’ll confirm the right plan.",
+      "Pricing depends on your website size and scope. Send your site URL and platform and we'll confirm the right plan.",
   },
   {
     id: "turnaround",
@@ -87,7 +116,7 @@ const SUPPORT_OPTIONS = [
     id: "hosting",
     title: "Do you work with Netlify/Render/Vercel?",
     keywords: ["netlify", "render", "vercel", "hosting"],
-    answer: "Yes. Hosting provider doesn’t block the service.",
+    answer: "Yes. Hosting provider doesn't block the service.",
   },
 ];
 
@@ -180,9 +209,17 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
       email,
       website,
       platform,
+      siteType,
+      budgetRange,
+      timeline,
+      needsDev,
+      needsSecurity,
       concerns,
       authorization,
       company,
+      testEmail,
+      testPassword,
+      limitedAccess,
     } = req.body || {};
 
     if (company && String(company).trim()) {
@@ -193,7 +230,13 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
     const emailClean = clampStr(email || "", 200);
     const websiteClean = clampStr(website || "", 500);
     const platformClean = clampStr(platform || "", 120);
+    const siteTypeClean = clampStr(siteType || "", 120);
+    const budgetRangeClean = clampStr(budgetRange || "", 120);
+    const timelineClean = clampStr(timeline || "", 120);
     const concernsClean = clampStr(concerns || "", 2000);
+    const testEmailClean = clampStr(testEmail || "", 200);
+    const testPasswordClean = clampStr(testPassword || "", 200);
+    const limitedAccessClean = clampStr(limitedAccess || "", 1000);
 
     if (!fullNameClean) {
       return res.status(400).json({ ok: false, error: "Full name is required." });
@@ -215,23 +258,40 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
       return res.status(500).json({ ok: false, error: "Email is not configured on the server." });
     }
 
+    const requestedWork = [
+      needsSecurity ? "Security review" : "",
+      needsDev ? "Development help" : "",
+    ]
+      .filter(Boolean)
+      .join(" + ") || "Security review";
+
     const startMessage = [
       `Full Name: ${fullNameClean}`,
+      `Website: ${websiteClean}`,
       `Platform: ${platformClean || "Not provided"}`,
+      `Site Type: ${siteTypeClean || "Not provided"}`,
+      `Budget Range: ${budgetRangeClean || "Not provided"}`,
+      `Timeline: ${timelineClean || "Not provided"}`,
+      `Requested Work: ${requestedWork}`,
+      testEmailClean ? `Test Email: ${testEmailClean}` : "",
+      testPasswordClean ? `Test Password: ${testPasswordClean}` : "",
+      limitedAccessClean ? `Access Notes: ${limitedAccessClean}` : "",
       "",
       "Specific Concerns:",
       concernsClean || "None provided",
       "",
       "Authorization:",
       "The client confirmed they are the owner or authorized operator of the website and granted ThreatNest permission to perform a safe, non-destructive security assessment.",
-    ].join("\n");
+    ]
+      .filter(Boolean)
+      .join("\n");
 
     const t1 = supportTeamTpl({
       email: emailClean,
       website: websiteClean || "—",
       pageUrl: "https://threatnest.com/start",
-      topic: "Start Request",
-      category: "Start",
+      topic: needsDev ? "Security + Development Request" : "Security Review Request",
+      category: needsDev ? "Start / Security + Development" : "Start / Security",
       message: startMessage,
       title: "New Start Request",
       preview: "A new start request was submitted.",
@@ -252,8 +312,8 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
       message: "We received your start request and will review it shortly.",
       title: "Start request received",
       preview: "We got your start request and will review it shortly.",
-      intro: "Thanks for starting with ThreatNest — we received your request and will review it shortly.",
-      subject: "We received your start request — ThreatNest",
+      intro: "Thanks for starting with ThreatNest - we received your request and will review it shortly.",
+      subject: "We received your start request - ThreatNest",
     });
 
     await resend.emails.send({
@@ -330,14 +390,14 @@ app.post("/api/support/ticket", rateLimit(5), async (req, res) => {
     });
 
     const t2 = supportAutoTpl({
-      name: nameClean,
+      name: nameClean || "there",
       email: emailClean,
       website: websiteClean || "",
       message: messageClean,
       title: "Message received",
       preview: "We got your message and will reply within 24 hours.",
-      intro: "Thanks for contacting ThreatNest — we received your message. We usually reply within 24 hours.",
-      subject: "We received your message — ThreatNest",
+      intro: "Thanks for contacting ThreatNest - we received your message. We usually reply within 24 hours.",
+      subject: "We received your message - ThreatNest",
     });
 
     await resend.emails.send({
