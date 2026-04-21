@@ -3,6 +3,7 @@
 import dotenv from "dotenv";
 dotenv.config();
 
+import https from "node:https";
 import express from "express";
 import cors from "cors";
 import { Resend } from "resend";
@@ -68,6 +69,7 @@ const resend = process.env.RESEND_API_KEY
 const SUPPORT_INBOX = process.env.SUPPORT_INBOX || "";
 const SUPPORT_FROM = process.env.SUPPORT_FROM || "";
 const INTERNAL_KEY = process.env.INTERNAL_KEY || "";
+const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL || "";
 
 // -----------------------------
 // Support widget fixed options
@@ -139,6 +141,120 @@ function asBool(v) {
     return ["true", "1", "yes", "on"].includes(v.trim().toLowerCase());
   }
   return false;
+}
+
+function escapeSlackText(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function slackField(label, value) {
+  const cleanValue = clampStr(value || "", 500);
+  if (!cleanValue) return null;
+
+  return {
+    type: "mrkdwn",
+    text: `*${escapeSlackText(label)}*\n${escapeSlackText(cleanValue)}`,
+  };
+}
+
+function postJson(url, payload) {
+  return new Promise((resolve, reject) => {
+    try {
+      const target = new URL(url);
+      const body = JSON.stringify(payload);
+      const request = https.request(
+        {
+          protocol: target.protocol,
+          hostname: target.hostname,
+          port: target.port || (target.protocol === "https:" ? 443 : 80),
+          path: `${target.pathname}${target.search}`,
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(body),
+          },
+        },
+        (response) => {
+          let responseBody = "";
+          response.setEncoding("utf8");
+          response.on("data", (chunk) => {
+            responseBody += chunk;
+          });
+          response.on("end", () => {
+            if (response.statusCode >= 200 && response.statusCode < 300) {
+              resolve(responseBody || "ok");
+              return;
+            }
+
+            reject(
+              new Error(
+                `Slack webhook failed (${response.statusCode || "unknown"}): ${
+                  responseBody || "empty response"
+                }`
+              )
+            );
+          });
+        }
+      );
+
+      request.on("error", reject);
+      request.write(body);
+      request.end();
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+async function sendSlackNotification({ title, summary, fields = [], notes }) {
+  if (!SLACK_WEBHOOK_URL) return;
+
+  const activeFields = fields.filter(Boolean).slice(0, 10);
+  const cleanSummary = clampStr(summary || "", 500);
+  const cleanNotes = clampStr(notes || "", 1200);
+
+  const blocks = [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: clampStr(title || "New submission", 150),
+        emoji: true,
+      },
+    },
+    cleanSummary
+      ? {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: escapeSlackText(cleanSummary),
+          },
+        }
+      : null,
+    activeFields.length
+      ? {
+          type: "section",
+          fields: activeFields,
+        }
+      : null,
+    cleanNotes
+      ? {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `*Notes*\n${escapeSlackText(cleanNotes)}`,
+          },
+        }
+      : null,
+  ].filter(Boolean);
+
+  await postJson(SLACK_WEBHOOK_URL, {
+    text: clampStr(title || "New submission", 150),
+    blocks,
+  });
 }
 
 // -----------------------------
@@ -367,6 +483,31 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
       react: t2.react,
     });
 
+    await sendSlackNotification({
+      title: "New start request",
+      summary: `${requestedWork} submitted from the website.`,
+      fields: [
+        slackField("Name", fullNameClean),
+        slackField("Email", emailClean),
+        slackField("Website", websiteClean),
+        slackField("Platform", platformClean || "Not provided"),
+        needsDevClean ? slackField("Site type", siteTypeClean || "Not provided") : null,
+        needsDevClean ? slackField("Budget", budgetRangeClean || "Not provided") : null,
+        needsDevClean ? slackField("Timeline", timelineClean || "Not provided") : null,
+        needsSecurityClean
+          ? slackField("GitHub / repo", githubAccessClean || "Not provided")
+          : null,
+        needsSecurityClean
+          ? slackField("Authorization", authorizationClean ? "Confirmed" : "Missing")
+          : null,
+        slackField("Page", pageUrlClean || "https://threatnest.com/start"),
+      ],
+      // Keep Slack summaries useful, but avoid sending test credentials there.
+      notes: concernsClean,
+    }).catch((error) => {
+      console.error("start request slack notification error:", error);
+    });
+
     return res.json({ ok: true });
   } catch (err) {
     console.error("start request error:", err);
@@ -467,6 +608,21 @@ app.post("/api/support/ticket", rateLimit(5), async (req, res) => {
         react: t2.react,
       });
     }
+
+    await sendSlackNotification({
+      title: "New contact request",
+      summary: `${categoryClean} message submitted from the website.`,
+      fields: [
+        slackField("Name", nameClean),
+        slackField("Email", emailClean || "Not provided"),
+        slackField("Website", websiteClean || "Not provided"),
+        slackField("Subject", categoryClean),
+        slackField("Page", pageUrlClean || "/contact"),
+      ],
+      notes: messageClean,
+    }).catch((error) => {
+      console.error("contact slack notification error:", error);
+    });
 
     return res.json({ ok: true });
   } catch (err) {
