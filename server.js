@@ -132,6 +132,15 @@ function clampStr(v, max) {
   return v.trim().slice(0, max);
 }
 
+function asBool(v) {
+  if (typeof v === "boolean") return v;
+  if (typeof v === "number") return v === 1;
+  if (typeof v === "string") {
+    return ["true", "1", "yes", "on"].includes(v.trim().toLowerCase());
+  }
+  return false;
+}
+
 // -----------------------------
 // Rate limit (per-IP)
 // -----------------------------
@@ -208,12 +217,16 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
       fullName,
       email,
       website,
+      pageUrl,
       platform,
       siteType,
       budgetRange,
       timeline,
       needsDev,
       needsSecurity,
+      webSelected,
+      securitySelected,
+      githubAccess,
       concerns,
       authorization,
       company,
@@ -229,14 +242,19 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
     const fullNameClean = clampStr(fullName || "", 120);
     const emailClean = clampStr(email || "", 200);
     const websiteClean = clampStr(website || "", 500);
+    const pageUrlClean = clampStr(pageUrl || "", 500);
     const platformClean = clampStr(platform || "", 120);
     const siteTypeClean = clampStr(siteType || "", 120);
     const budgetRangeClean = clampStr(budgetRange || "", 120);
     const timelineClean = clampStr(timeline || "", 120);
+    const githubAccessClean = clampStr(githubAccess || "", 500);
     const concernsClean = clampStr(concerns || "", 2000);
     const testEmailClean = clampStr(testEmail || "", 200);
     const testPasswordClean = clampStr(testPassword || "", 200);
     const limitedAccessClean = clampStr(limitedAccess || "", 1000);
+    const needsDevClean = asBool(needsDev) || asBool(webSelected);
+    const needsSecurityClean = asBool(needsSecurity) || asBool(securitySelected);
+    const authorizationClean = asBool(authorization);
 
     if (!fullNameClean) {
       return res.status(400).json({ ok: false, error: "Full name is required." });
@@ -250,7 +268,11 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
       return res.status(400).json({ ok: false, error: "Website is required." });
     }
 
-    if (!authorization) {
+    if (!needsDevClean && !needsSecurityClean) {
+      return res.status(400).json({ ok: false, error: "Choose at least one service." });
+    }
+
+    if (needsSecurityClean && !authorizationClean) {
       return res.status(400).json({ ok: false, error: "Authorization is required." });
     }
 
@@ -259,40 +281,44 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
     }
 
     const requestedWork = [
-      needsSecurity ? "Security review" : "",
-      needsDev ? "Development help" : "",
+      needsSecurityClean ? "Security review" : "",
+      needsDevClean ? "Web development" : "",
     ]
       .filter(Boolean)
-      .join(" + ") || "Security review";
+      .join(" + ");
 
-    const startMessage = [
-      `Full Name: ${fullNameClean}`,
-      `Website: ${websiteClean}`,
-      `Platform: ${platformClean || "Not provided"}`,
-      `Site Type: ${siteTypeClean || "Not provided"}`,
-      `Budget Range: ${budgetRangeClean || "Not provided"}`,
-      `Timeline: ${timelineClean || "Not provided"}`,
-      `Requested Work: ${requestedWork}`,
-      testEmailClean ? `Test Email: ${testEmailClean}` : "",
-      testPasswordClean ? `Test Password: ${testPasswordClean}` : "",
-      limitedAccessClean ? `Access Notes: ${limitedAccessClean}` : "",
-      "",
-      "Specific Concerns:",
-      concernsClean || "None provided",
-      "",
-      "Authorization:",
-      "The client confirmed they are the owner or authorized operator of the website and granted ThreatNest permission to perform a safe, non-destructive security assessment.",
-    ]
-      .filter(Boolean)
-      .join("\n");
+    const requestDetails = [
+      ["Requested work", requestedWork],
+      ["Platform", platformClean || "Not provided"],
+      needsDevClean ? ["Site type", siteTypeClean || "Not provided"] : null,
+      needsDevClean ? ["Budget range", budgetRangeClean || "Not provided"] : null,
+      needsDevClean ? ["Timeline", timelineClean || "Not provided"] : null,
+      needsSecurityClean ? ["GitHub / repo access", githubAccessClean || "Not provided"] : null,
+      needsSecurityClean ? ["Authorization", authorizationClean ? "Confirmed" : "Missing"] : null,
+      testEmailClean ? ["Test email", testEmailClean] : null,
+      testPasswordClean ? ["Temporary test password", testPasswordClean] : null,
+      limitedAccessClean ? ["Access notes", limitedAccessClean] : null,
+    ].filter(Boolean);
+
+    const teamTopic =
+      needsDevClean && needsSecurityClean
+        ? "Start: Web Development + Security Review"
+        : needsDevClean
+        ? "Start: Web Development"
+        : "Start: Security Review";
 
     const t1 = supportTeamTpl({
+      name: fullNameClean,
       email: emailClean,
-      website: websiteClean || "—",
-      pageUrl: "https://threatnest.com/start",
-      topic: needsDev ? "Security + Development Request" : "Security Review Request",
-      category: needsDev ? "Start / Security + Development" : "Start / Security",
-      message: startMessage,
+      website: websiteClean,
+      pageUrl: pageUrlClean || "https://threatnest.com/start",
+      topic: teamTopic,
+      category: "Start form",
+      intro: "A new start request came in from the website.",
+      details: requestDetails,
+      detailsTitle: "Selected options",
+      message: concernsClean || "No extra notes were provided.",
+      messageTitle: needsSecurityClean ? "Priority areas / notes" : "Project notes",
       title: "New Start Request",
       preview: "A new start request was submitted.",
     });
@@ -308,11 +334,29 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
     const t2 = supportAutoTpl({
       name: fullNameClean,
       email: emailClean,
-      website: websiteClean || "",
-      message: "We received your start request and will review it shortly.",
+      website: websiteClean,
+      summary: `We received your ${requestedWork.toLowerCase()} request and will review it shortly.`,
+      details: [
+        ["Requested work", requestedWork],
+        ["Platform", platformClean || "Not provided"],
+        needsDevClean ? ["Site type", siteTypeClean || "Not provided"] : null,
+        needsDevClean ? ["Budget range", budgetRangeClean || "Not provided"] : null,
+        needsDevClean ? ["Timeline", timelineClean || "Not provided"] : null,
+        needsSecurityClean ? ["GitHub / repo access", githubAccessClean || "Not provided"] : null,
+      ].filter(Boolean),
+      detailsTitle: "What we received",
+      nextSteps: [
+        "We review the request and confirm the scope.",
+        needsSecurityClean
+          ? "If needed, we will ask for limited access or a temporary test account."
+          : "We reply with timing, pricing, and the best next step for the build.",
+        "We follow up by email with the next step.",
+      ],
+      message: concernsClean,
+      messageTitle: concernsClean ? "Your notes" : "Notes",
       title: "Start request received",
       preview: "We got your start request and will review it shortly.",
-      intro: "Thanks for starting with ThreatNest - we received your request and will review it shortly.",
+      intro: "Thanks for starting with ThreatNest. We received your request and will review it shortly.",
       subject: "We received your start request - ThreatNest",
     });
 
@@ -357,8 +401,13 @@ app.post("/api/support/ticket", rateLimit(5), async (req, res) => {
     const pageUrlClean = clampStr(pageUrl || "", 500);
     const topicClean = clampStr(topic || "Contact Request", 160);
     const categoryClean = clampStr(category || "Contact", 120);
+    const hasEmail = Boolean(emailClean);
 
-    if (!isValidEmail(emailClean)) {
+    if (!nameClean) {
+      return res.status(400).json({ ok: false, error: "Name is required." });
+    }
+
+    if (hasEmail && !isValidEmail(emailClean)) {
       return res.status(400).json({ ok: false, error: "Invalid email." });
     }
 
@@ -371,11 +420,13 @@ app.post("/api/support/ticket", rateLimit(5), async (req, res) => {
     }
 
     const t1 = supportTeamTpl({
+      name: nameClean,
       email: emailClean,
-      website: websiteClean || "—",
-      pageUrl: pageUrlClean || "—",
+      website: websiteClean,
+      pageUrl: pageUrlClean || "/contact",
       topic: topicClean,
       category: categoryClean,
+      intro: "A new contact request came in from the website.",
       message: messageClean,
       title: "New Contact Request",
       preview: "A new contact request was submitted.",
@@ -384,28 +435,38 @@ app.post("/api/support/ticket", rateLimit(5), async (req, res) => {
     await resend.emails.send({
       from: SUPPORT_FROM,
       to: [SUPPORT_INBOX],
-      replyTo: emailClean,
+      replyTo: hasEmail ? emailClean : undefined,
       subject: t1.subject,
       react: t1.react,
     });
 
-    const t2 = supportAutoTpl({
-      name: nameClean || "there",
-      email: emailClean,
-      website: websiteClean || "",
-      message: messageClean,
-      title: "Message received",
-      preview: "We got your message and will reply within 24 hours.",
-      intro: "Thanks for contacting ThreatNest - we received your message. We usually reply within 24 hours.",
-      subject: "We received your message - ThreatNest",
-    });
+    if (hasEmail) {
+      const t2 = supportAutoTpl({
+        name: nameClean,
+        email: emailClean,
+        website: websiteClean,
+        summary: `We received your ${categoryClean.toLowerCase()} message.`,
+        details: [["Subject", categoryClean]],
+        detailsTitle: "Message details",
+        nextSteps: [
+          "We review your message.",
+          "We reply within about 1 business day.",
+        ],
+        message: messageClean,
+        messageTitle: "Your message",
+        title: "Message received",
+        preview: "We got your message and will reply within 24 hours.",
+        intro: "Thanks for contacting ThreatNest. We received your message and usually reply within 1 business day.",
+        subject: "We received your message - ThreatNest",
+      });
 
-    await resend.emails.send({
-      from: SUPPORT_FROM,
-      to: [emailClean],
-      subject: t2.subject,
-      react: t2.react,
-    });
+      await resend.emails.send({
+        from: SUPPORT_FROM,
+        to: [emailClean],
+        subject: t2.subject,
+        react: t2.react,
+      });
+    }
 
     return res.json({ ok: true });
   } catch (err) {
