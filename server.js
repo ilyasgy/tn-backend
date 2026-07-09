@@ -347,7 +347,6 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
       authorization,
       company,
       testEmail,
-      testPassword,
       limitedAccess,
     } = req.body || {};
 
@@ -366,7 +365,6 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
     const githubAccessClean = clampStr(githubAccess || "", 500);
     const concernsClean = clampStr(concerns || "", 2000);
     const testEmailClean = clampStr(testEmail || "", 200);
-    const testPasswordClean = clampStr(testPassword || "", 200);
     const limitedAccessClean = clampStr(limitedAccess || "", 1000);
     const needsDevClean = asBool(needsDev) || asBool(webSelected);
     const needsSecurityClean = asBool(needsSecurity) || asBool(securitySelected);
@@ -412,7 +410,6 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
       needsSecurityClean ? ["GitHub / repo access", githubAccessClean || "Not provided"] : null,
       needsSecurityClean ? ["Authorization", authorizationClean ? "Confirmed" : "Missing"] : null,
       testEmailClean ? ["Test email", testEmailClean] : null,
-      testPasswordClean ? ["Temporary test password", testPasswordClean] : null,
       limitedAccessClean ? ["Access notes", limitedAccessClean] : null,
     ].filter(Boolean);
 
@@ -701,5 +698,5 @@ app.post("/api/payment/status", requireInternalKey, rateLimit(20), async (req, r
 // -----------------------------
 // Start server
 // -----------------------------
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 4000;
 app.listen(port, () => console.log("API running on", port));
