@@ -33,8 +33,13 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
       return res.status(400).json({ ok: false, error: "Website is required." });
     }
 
-    if (!authorization) {
-      return res.status(400).json({ ok: false, error: "Authorization is required." });
+    const requesterAuthorityConfirmed = Boolean(authorization);
+
+    if (!requesterAuthorityConfirmed) {
+      return res.status(400).json({
+        ok: false,
+        error: "Please confirm ownership or authority to request an assessment.",
+      });
     }
 
     if (!resend || !SUPPORT_INBOX || !SUPPORT_FROM) {
@@ -48,8 +53,11 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
       "Specific Concerns:",
       concernsClean || "None provided",
       "",
-      "Authorization:",
-      "The client confirmed they are the owner or authorized operator of the website and granted ThreatNest permission to perform a safe, non-destructive security assessment.",
+      "Requester authority confirmation:",
+      "The requester confirmed they own the systems or are authorized to request an assessment.",
+      "",
+      "Testing authorization:",
+      "Not granted. Submitting this form is only a request and does not authorize ThreatNest to test any system.",
     ].join("\n");
 
     // 1) Styled email to YOU
@@ -77,10 +85,11 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
       name: fullNameClean,
       email: emailClean,
       website: websiteClean || "",
-      message: "We received your start request and will review it shortly.",
+      message:
+        "We received your start request and will review it within one business day. Your submission does not authorize testing. Testing begins only after scope, written authorization, cleared payment, the testing window, and required access are confirmed.",
       title: "Start request received",
-      preview: "We got your start request and will review it shortly.",
-      intro: "Thanks for starting with ThreatNest — we received your request and will review it shortly.",
+      preview: "We got your start request and will review it within one business day.",
+      intro: "Thanks for starting with ThreatNest — we received your request and will review it within one business day.",
       subject: "We received your start request — ThreatNest",
     });
 

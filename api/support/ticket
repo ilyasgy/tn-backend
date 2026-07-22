@@ -53,8 +53,8 @@ app.post("/api/support/ticket", rateLimit(5), async (req, res) => {
       website: websiteClean || "",
       message: messageClean,
       title: "Message received",
-      preview: "We got your message and will reply within 24 hours.",
-      intro: "Thanks for contacting ThreatNest — we received your message. We usually reply within 24 hours.",
+      preview: "We got your message and will reply within one business day.",
+      intro: "Thanks for contacting ThreatNest — we received your message. We usually reply within one business day.",
       subject: "We received your message — ThreatNest",
     });
 

@@ -98,8 +98,9 @@ const SUPPORT_OPTIONS = [
   {
     id: "turnaround",
     title: "How long does it take?",
-    keywords: ["time", "delivery", "48", "hours"],
-    answer: "Standard delivery is 48 hours after payment and authorization is confirmed.",
+    keywords: ["time", "delivery", "seven", "days"],
+    answer:
+      "The standard report is delivered within seven calendar days. The period begins only after scope, written authorization, cleared payment, the testing window, and required access are confirmed.",
   },
   {
     id: "requirements",
@@ -112,7 +113,8 @@ const SUPPORT_OPTIONS = [
     id: "legal",
     title: "Is this legal / authorized?",
     keywords: ["legal", "authorized", "permission", "consent"],
-    answer: "We only work with the website owner (or written permission).",
+    answer:
+      "We test only after written authorization and the other engagement prerequisites are complete. A form submission, call, email, or payment is only a request and does not authorize testing.",
   },
   {
     id: "hosting",
@@ -346,8 +348,6 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
       concerns,
       authorization,
       company,
-      testEmail,
-      limitedAccess,
     } = req.body || {};
 
     if (company && String(company).trim()) {
@@ -364,11 +364,9 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
     const timelineClean = clampStr(timeline || "", 120);
     const githubAccessClean = clampStr(githubAccess || "", 500);
     const concernsClean = clampStr(concerns || "", 2000);
-    const testEmailClean = clampStr(testEmail || "", 200);
-    const limitedAccessClean = clampStr(limitedAccess || "", 1000);
     const needsDevClean = asBool(needsDev) || asBool(webSelected);
     const needsSecurityClean = asBool(needsSecurity) || asBool(securitySelected);
-    const authorizationClean = asBool(authorization);
+    const requesterAuthorityConfirmed = asBool(authorization);
 
     if (!fullNameClean) {
       return res.status(400).json({ ok: false, error: "Full name is required." });
@@ -386,8 +384,11 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
       return res.status(400).json({ ok: false, error: "Choose at least one service." });
     }
 
-    if (needsSecurityClean && !authorizationClean) {
-      return res.status(400).json({ ok: false, error: "Authorization is required." });
+    if (needsSecurityClean && !requesterAuthorityConfirmed) {
+      return res.status(400).json({
+        ok: false,
+        error: "Please confirm ownership or authority to request an assessment.",
+      });
     }
 
     if (!resend || !SUPPORT_INBOX || !SUPPORT_FROM) {
@@ -408,9 +409,15 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
       needsDevClean ? ["Budget range", budgetRangeClean || "Not provided"] : null,
       needsDevClean ? ["Timeline", timelineClean || "Not provided"] : null,
       needsSecurityClean ? ["GitHub / repo access", githubAccessClean || "Not provided"] : null,
-      needsSecurityClean ? ["Authorization", authorizationClean ? "Confirmed" : "Missing"] : null,
-      testEmailClean ? ["Test email", testEmailClean] : null,
-      limitedAccessClean ? ["Access notes", limitedAccessClean] : null,
+      needsSecurityClean
+        ? [
+            "Requester authority",
+            requesterAuthorityConfirmed
+              ? "Confirmed ownership or authority to request an assessment"
+              : "Missing",
+          ]
+        : null,
+      needsSecurityClean ? ["Testing authorization", "Not granted by this form"] : null,
     ].filter(Boolean);
 
     const teamTopic =
@@ -448,7 +455,7 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
       name: fullNameClean,
       email: emailClean,
       website: websiteClean,
-      summary: `We received your ${requestedWork.toLowerCase()} request and will review it shortly.`,
+      summary: `We received your ${requestedWork.toLowerCase()} request and will review it within one business day. Submitting this form does not authorize testing.`,
       details: [
         ["Requested work", requestedWork],
         ["Platform", platformClean || "Not provided"],
@@ -456,20 +463,26 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
         needsDevClean ? ["Budget range", budgetRangeClean || "Not provided"] : null,
         needsDevClean ? ["Timeline", timelineClean || "Not provided"] : null,
         needsSecurityClean ? ["GitHub / repo access", githubAccessClean || "Not provided"] : null,
+        needsSecurityClean
+          ? ["Requester authority", "Confirmed ownership or authority to request an assessment"]
+          : null,
+        needsSecurityClean ? ["Testing authorization", "Not granted by this form"] : null,
       ].filter(Boolean),
       detailsTitle: "What we received",
       nextSteps: [
-        "We review the request and confirm the scope.",
+        "We review the request within one business day and confirm the proposed scope.",
         needsSecurityClean
-          ? "If needed, we will ask for limited access or a temporary test account."
+          ? "Testing begins only after scope, written authorization, cleared payment, the testing window, and required access are confirmed."
           : "We reply with timing, pricing, and the best next step for the build.",
-        "We follow up by email with the next step.",
+        needsSecurityClean
+          ? "If access is needed, we will provide approved secure exchange instructions after the engagement is confirmed."
+          : "We follow up by email with the next step.",
       ],
       message: concernsClean,
       messageTitle: concernsClean ? "Your notes" : "Notes",
       title: "Start request received",
-      preview: "We got your start request and will review it shortly.",
-      intro: "Thanks for starting with ThreatNest. We received your request and will review it shortly.",
+      preview: "We got your start request and will review it within one business day.",
+      intro: "Thanks for starting with ThreatNest. We received your request and will review it within one business day.",
       subject: "We received your start request - ThreatNest",
     });
 
@@ -495,11 +508,18 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
           ? slackField("GitHub / repo", githubAccessClean || "Not provided")
           : null,
         needsSecurityClean
-          ? slackField("Authorization", authorizationClean ? "Confirmed" : "Missing")
+          ? slackField(
+              "Requester authority",
+              requesterAuthorityConfirmed
+                ? "Confirmed ownership or authority to request an assessment"
+                : "Missing"
+            )
+          : null,
+        needsSecurityClean
+          ? slackField("Testing authorization", "Not granted by this form")
           : null,
         slackField("Page", pageUrlClean || "https://threatnest.com/start"),
       ],
-      // Keep Slack summaries useful, but avoid sending test credentials there.
       notes: concernsClean,
     }).catch((error) => {
       console.error("start request slack notification error:", error);
@@ -588,13 +608,13 @@ app.post("/api/support/ticket", rateLimit(5), async (req, res) => {
         detailsTitle: "Message details",
         nextSteps: [
           "We review your message.",
-          "We reply within about 1 business day.",
+          "We reply within one business day.",
         ],
         message: messageClean,
         messageTitle: "Your message",
         title: "Message received",
-        preview: "We got your message and will reply within 24 hours.",
-        intro: "Thanks for contacting ThreatNest. We received your message and usually reply within 1 business day.",
+        preview: "We got your message and will reply within one business day.",
+        intro: "Thanks for contacting ThreatNest. We received your message and usually reply within one business day.",
         subject: "We received your message - ThreatNest",
       });
 

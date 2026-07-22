@@ -1,19 +1,19 @@
 import React from "react";
-import EmailBase, { safe } from "./base.js";
+import EmailBase from "./base.js";
 
 export default function paymentSuccessTpl({ clientName, amount, orderId }) {
   const safe = (v, dash = "—") => (v && String(v).trim() ? String(v).trim() : dash);
 
   return {
-    subject: "Payment received — we’re starting your work",
+    subject: "Payment received — next steps",
     react: React.createElement(
       EmailBase,
-      { title: "Payment received", preview: "Thanks — we’re starting your work shortly." },
+      { title: "Payment received", preview: "Thanks — we’ll confirm the remaining prerequisites within one business day." },
       [
         React.createElement(
           "p",
           { key: 1, style: { margin: "0 0 12px" } },
-          `Hi ${safe(clientName, "there")}, we received your payment. We’re starting your work shortly.`
+          `Hi ${safe(clientName, "there")}, we received your payment. We’ll confirm the remaining engagement prerequisites within one business day.`
         ),
 
         React.createElement(
@@ -45,7 +45,7 @@ export default function paymentSuccessTpl({ clientName, amount, orderId }) {
         React.createElement(
           "p",
           { key: 3, style: { margin: "0 0 12px" } },
-          "If we need any additional info (like a test account for a login flow), we’ll email you."
+          "Payment alone does not authorize testing. Testing begins only after scope, written authorization, the testing window, and required access are confirmed. If we need anything else, we’ll email you."
         ),
         React.createElement(
           "p",

@@ -1,5 +1,5 @@
 import React from "react";
-import EmailBase, { safe } from "./base.js";
+import EmailBase from "./base.js";
 
 export default function paymentFailedTpl({ clientName, orderId, reason }) {
   const safe = (v, dash = "—") => (v && String(v).trim() ? String(v).trim() : dash);
@@ -45,7 +45,7 @@ export default function paymentFailedTpl({ clientName, orderId, reason }) {
         React.createElement(
           "p",
           { key: 3, style: { margin: "0 0 12px" } },
-          "Please retry the payment. If you believe this is an error, reply to this email and we’ll help quickly."
+          "Please retry the payment. If you believe this is an error, reply to this email and we’ll respond within one business day."
         ),
         React.createElement(
           "p",
