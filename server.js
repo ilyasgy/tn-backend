@@ -3,9 +3,11 @@
 import dotenv from "dotenv";
 dotenv.config();
 
+import { timingSafeEqual } from "node:crypto";
 import https from "node:https";
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
 import { Resend } from "resend";
 
 // Email templates
@@ -45,7 +47,9 @@ const ALLOWED_ORIGINS = new Set([
   ),
 ]);
 
+app.disable("x-powered-by");
 app.set("trust proxy", 1);
+app.use(helmet());
 app.use(express.json({ limit: "200kb" }));
 
 app.use(
@@ -55,10 +59,14 @@ app.use(
         return callback(null, true);
       }
 
-      return callback(new Error("Not allowed by CORS"));
+      const error = new Error("Origin not allowed");
+      error.status = 403;
+      return callback(error);
     },
     methods: ["GET", "POST", "OPTIONS"],
-    credentials: true,
+    allowedHeaders: ["Content-Type", "X-Internal-Key"],
+    credentials: false,
+    maxAge: 86_400,
   })
 );
 
@@ -70,6 +78,16 @@ const SUPPORT_INBOX = process.env.SUPPORT_INBOX || "";
 const SUPPORT_FROM = process.env.SUPPORT_FROM || "";
 const INTERNAL_KEY = process.env.INTERNAL_KEY || "";
 const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL || "";
+
+async function sendEmail(message) {
+  const result = await resend.emails.send(message);
+
+  if (result?.error) {
+    throw new Error("Email provider rejected the request", { cause: result.error });
+  }
+
+  return result?.data;
+}
 
 // -----------------------------
 // Support widget fixed options
@@ -136,6 +154,19 @@ function clampStr(v, max) {
   return v.trim().slice(0, max);
 }
 
+function cleanHeaderValue(value, max) {
+  return clampStr(value, max).replace(/[\r\n]+/g, " ");
+}
+
+function isValidHttpUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function asBool(v) {
   if (typeof v === "boolean") return v;
   if (typeof v === "number") return v === 1;
@@ -166,6 +197,10 @@ function postJson(url, payload) {
   return new Promise((resolve, reject) => {
     try {
       const target = new URL(url);
+      if (target.protocol !== "https:") {
+        throw new Error("Webhook URL must use HTTPS");
+      }
+
       const body = JSON.stringify(payload);
       const request = https.request(
         {
@@ -183,7 +218,9 @@ function postJson(url, payload) {
           let responseBody = "";
           response.setEncoding("utf8");
           response.on("data", (chunk) => {
-            responseBody += chunk;
+            if (responseBody.length < 4096) {
+              responseBody += chunk.slice(0, 4096 - responseBody.length);
+            }
           });
           response.on("end", () => {
             if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -203,6 +240,9 @@ function postJson(url, payload) {
       );
 
       request.on("error", reject);
+      request.setTimeout(5000, () => {
+        request.destroy(new Error("Webhook request timed out"));
+      });
       request.write(body);
       request.end();
     } catch (error) {
@@ -266,8 +306,7 @@ const RATE_WINDOW_MS = 60_000;
 const rateMap = new Map();
 
 function getClientIp(req) {
-  const fwd = (req.headers["x-forwarded-for"] || "").toString();
-  return fwd.split(",")[0].trim() || req.socket?.remoteAddress || "unknown";
+  return req.ip || req.socket?.remoteAddress || "unknown";
 }
 
 function rateLimit(maxPerMin) {
@@ -284,7 +323,12 @@ function rateLimit(maxPerMin) {
     record.count += 1;
     rateMap.set(ip, record);
 
+    res.setHeader("RateLimit-Limit", String(maxPerMin));
+    res.setHeader("RateLimit-Remaining", String(Math.max(0, maxPerMin - record.count)));
+    res.setHeader("RateLimit-Reset", String(Math.ceil(record.resetAt / 1000)));
+
     if (record.count > maxPerMin) {
+      res.setHeader("Retry-After", String(Math.ceil((record.resetAt - now) / 1000)));
       return res.status(429).json({ ok: false, error: "Too many requests. Try again soon." });
     }
 
@@ -303,12 +347,16 @@ setInterval(() => {
 // Security: protect payment endpoint
 // -----------------------------
 function requireInternalKey(req, res, next) {
-  if (!INTERNAL_KEY) {
+  if (INTERNAL_KEY.length < 32) {
     return res.status(500).json({ ok: false, error: "Server misconfigured." });
   }
 
   const key = req.headers["x-internal-key"];
-  if (!key || key !== INTERNAL_KEY) {
+  const provided = Buffer.from(typeof key === "string" ? key : "", "utf8");
+  const expected = Buffer.from(INTERNAL_KEY, "utf8");
+  const matches = provided.length === expected.length && timingSafeEqual(provided, expected);
+
+  if (!matches) {
     return res.status(401).json({ ok: false, error: "Unauthorized" });
   }
 
@@ -380,6 +428,13 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
       return res.status(400).json({ ok: false, error: "Website is required." });
     }
 
+    if (!isValidHttpUrl(websiteClean)) {
+      return res.status(400).json({
+        ok: false,
+        error: "Website must be a valid HTTP or HTTPS URL.",
+      });
+    }
+
     if (!needsDevClean && !needsSecurityClean) {
       return res.status(400).json({ ok: false, error: "Choose at least one service." });
     }
@@ -443,7 +498,7 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
       preview: "A new start request was submitted.",
     });
 
-    await resend.emails.send({
+    await sendEmail({
       from: SUPPORT_FROM,
       to: [SUPPORT_INBOX],
       replyTo: emailClean,
@@ -486,7 +541,7 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
       subject: "We received your start request - ThreatNest",
     });
 
-    await resend.emails.send({
+    await sendEmail({
       from: SUPPORT_FROM,
       to: [emailClean],
       subject: t2.subject,
@@ -557,8 +612,8 @@ app.post("/api/support/ticket", rateLimit(5), async (req, res) => {
     const messageClean = clampStr(message || "", 2000);
     const websiteClean = clampStr(website || "", 500);
     const pageUrlClean = clampStr(pageUrl || "", 500);
-    const topicClean = clampStr(topic || "Contact Request", 160);
-    const categoryClean = clampStr(category || "Contact", 120);
+    const topicClean = cleanHeaderValue(topic || "Contact Request", 160);
+    const categoryClean = cleanHeaderValue(category || "Contact", 120);
     const hasEmail = Boolean(emailClean);
 
     if (!nameClean) {
@@ -571,6 +626,13 @@ app.post("/api/support/ticket", rateLimit(5), async (req, res) => {
 
     if (!messageClean) {
       return res.status(400).json({ ok: false, error: "Message is required." });
+    }
+
+    if (websiteClean && !isValidHttpUrl(websiteClean)) {
+      return res.status(400).json({
+        ok: false,
+        error: "Website must be a valid HTTP or HTTPS URL.",
+      });
     }
 
     if (!resend || !SUPPORT_INBOX || !SUPPORT_FROM) {
@@ -590,7 +652,7 @@ app.post("/api/support/ticket", rateLimit(5), async (req, res) => {
       preview: "A new contact request was submitted.",
     });
 
-    await resend.emails.send({
+    await sendEmail({
       from: SUPPORT_FROM,
       to: [SUPPORT_INBOX],
       replyTo: hasEmail ? emailClean : undefined,
@@ -618,7 +680,7 @@ app.post("/api/support/ticket", rateLimit(5), async (req, res) => {
         subject: "We received your message - ThreatNest",
       });
 
-      await resend.emails.send({
+      await sendEmail({
         from: SUPPORT_FROM,
         to: [emailClean],
         subject: t2.subject,
@@ -681,7 +743,7 @@ app.post("/api/payment/status", requireInternalKey, rateLimit(20), async (req, r
         orderId: orderIdClean,
       });
 
-      await resend.emails.send({
+      await sendEmail({
         from: SUPPORT_FROM,
         to: [emailClean],
         subject: t.subject,
@@ -698,7 +760,7 @@ app.post("/api/payment/status", requireInternalKey, rateLimit(20), async (req, r
         reason: reasonClean,
       });
 
-      await resend.emails.send({
+      await sendEmail({
         from: SUPPORT_FROM,
         to: [emailClean],
         subject: t.subject,
@@ -713,6 +775,30 @@ app.post("/api/payment/status", requireInternalKey, rateLimit(20), async (req, r
     console.error("payment status email error:", err);
     return res.status(500).json({ ok: false, error: "Failed to send email." });
   }
+});
+
+app.use((req, res) => {
+  res.status(404).json({ ok: false, error: "Not found." });
+});
+
+app.use((error, req, res, next) => {
+  if (res.headersSent) {
+    return next(error);
+  }
+
+  const status = Number.isInteger(error?.status) ? error.status : 500;
+  if (status >= 500) {
+    console.error("unhandled request error:", error);
+  }
+
+  const message =
+    status === 400
+      ? "Invalid request."
+      : status === 403
+        ? "Origin not allowed."
+        : "Internal server error.";
+
+  return res.status(status).json({ ok: false, error: message });
 });
 
 // -----------------------------

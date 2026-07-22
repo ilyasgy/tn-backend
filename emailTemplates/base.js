@@ -11,7 +11,7 @@ const BRAND = {
   name: "ThreatNest",
   site: "https://threatnest.com",
   // MUST be absolute URL for email clients
-  logo: "https://threatnest.com/icon0.svg",
+  logo: "https://threatnest.com/icon1.png",
 };
 
 export default function EmailBase({ title, preview, children }) {
