@@ -3,9 +3,11 @@
 import dotenv from "dotenv";
 dotenv.config();
 
+import { timingSafeEqual } from "node:crypto";
 import https from "node:https";
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
 import { Resend } from "resend";
 
 // Email templates
@@ -45,7 +47,9 @@ const ALLOWED_ORIGINS = new Set([
   ),
 ]);
 
+app.disable("x-powered-by");
 app.set("trust proxy", 1);
+app.use(helmet());
 app.use(express.json({ limit: "200kb" }));
 
 app.use(
@@ -55,10 +59,14 @@ app.use(
         return callback(null, true);
       }
 
-      return callback(new Error("Not allowed by CORS"));
+      const error = new Error("Origin not allowed");
+      error.status = 403;
+      return callback(error);
     },
     methods: ["GET", "POST", "OPTIONS"],
-    credentials: true,
+    allowedHeaders: ["Content-Type", "X-Internal-Key"],
+    credentials: false,
+    maxAge: 86_400,
   })
 );
 
@@ -70,6 +78,16 @@ const SUPPORT_INBOX = process.env.SUPPORT_INBOX || "";
 const SUPPORT_FROM = process.env.SUPPORT_FROM || "";
 const INTERNAL_KEY = process.env.INTERNAL_KEY || "";
 const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL || "";
+
+async function sendEmail(message) {
+  const result = await resend.emails.send(message);
+
+  if (result?.error) {
+    throw new Error("Email provider rejected the request", { cause: result.error });
+  }
+
+  return result?.data;
+}
 
 // -----------------------------
 // Support widget fixed options
@@ -98,8 +116,9 @@ const SUPPORT_OPTIONS = [
   {
     id: "turnaround",
     title: "How long does it take?",
-    keywords: ["time", "delivery", "48", "hours"],
-    answer: "Standard delivery is 48 hours after payment and authorization is confirmed.",
+    keywords: ["time", "delivery", "seven", "days"],
+    answer:
+      "The standard report is delivered within seven calendar days. The period begins only after scope, written authorization, cleared payment, the testing window, and required access are confirmed.",
   },
   {
     id: "requirements",
@@ -112,7 +131,8 @@ const SUPPORT_OPTIONS = [
     id: "legal",
     title: "Is this legal / authorized?",
     keywords: ["legal", "authorized", "permission", "consent"],
-    answer: "We only work with the website owner (or written permission).",
+    answer:
+      "We test only after written authorization and the other engagement prerequisites are complete. A form submission, call, email, or payment is only a request and does not authorize testing.",
   },
   {
     id: "hosting",
@@ -132,6 +152,19 @@ function isValidEmail(email) {
 function clampStr(v, max) {
   if (typeof v !== "string") return "";
   return v.trim().slice(0, max);
+}
+
+function cleanHeaderValue(value, max) {
+  return clampStr(value, max).replace(/[\r\n]+/g, " ");
+}
+
+function isValidHttpUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function asBool(v) {
@@ -164,6 +197,10 @@ function postJson(url, payload) {
   return new Promise((resolve, reject) => {
     try {
       const target = new URL(url);
+      if (target.protocol !== "https:") {
+        throw new Error("Webhook URL must use HTTPS");
+      }
+
       const body = JSON.stringify(payload);
       const request = https.request(
         {
@@ -181,7 +218,9 @@ function postJson(url, payload) {
           let responseBody = "";
           response.setEncoding("utf8");
           response.on("data", (chunk) => {
-            responseBody += chunk;
+            if (responseBody.length < 4096) {
+              responseBody += chunk.slice(0, 4096 - responseBody.length);
+            }
           });
           response.on("end", () => {
             if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -201,6 +240,9 @@ function postJson(url, payload) {
       );
 
       request.on("error", reject);
+      request.setTimeout(5000, () => {
+        request.destroy(new Error("Webhook request timed out"));
+      });
       request.write(body);
       request.end();
     } catch (error) {
@@ -264,8 +306,7 @@ const RATE_WINDOW_MS = 60_000;
 const rateMap = new Map();
 
 function getClientIp(req) {
-  const fwd = (req.headers["x-forwarded-for"] || "").toString();
-  return fwd.split(",")[0].trim() || req.socket?.remoteAddress || "unknown";
+  return req.ip || req.socket?.remoteAddress || "unknown";
 }
 
 function rateLimit(maxPerMin) {
@@ -282,7 +323,12 @@ function rateLimit(maxPerMin) {
     record.count += 1;
     rateMap.set(ip, record);
 
+    res.setHeader("RateLimit-Limit", String(maxPerMin));
+    res.setHeader("RateLimit-Remaining", String(Math.max(0, maxPerMin - record.count)));
+    res.setHeader("RateLimit-Reset", String(Math.ceil(record.resetAt / 1000)));
+
     if (record.count > maxPerMin) {
+      res.setHeader("Retry-After", String(Math.ceil((record.resetAt - now) / 1000)));
       return res.status(429).json({ ok: false, error: "Too many requests. Try again soon." });
     }
 
@@ -301,12 +347,16 @@ setInterval(() => {
 // Security: protect payment endpoint
 // -----------------------------
 function requireInternalKey(req, res, next) {
-  if (!INTERNAL_KEY) {
+  if (INTERNAL_KEY.length < 32) {
     return res.status(500).json({ ok: false, error: "Server misconfigured." });
   }
 
   const key = req.headers["x-internal-key"];
-  if (!key || key !== INTERNAL_KEY) {
+  const provided = Buffer.from(typeof key === "string" ? key : "", "utf8");
+  const expected = Buffer.from(INTERNAL_KEY, "utf8");
+  const matches = provided.length === expected.length && timingSafeEqual(provided, expected);
+
+  if (!matches) {
     return res.status(401).json({ ok: false, error: "Unauthorized" });
   }
 
@@ -346,8 +396,6 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
       concerns,
       authorization,
       company,
-      testEmail,
-      limitedAccess,
     } = req.body || {};
 
     if (company && String(company).trim()) {
@@ -364,11 +412,9 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
     const timelineClean = clampStr(timeline || "", 120);
     const githubAccessClean = clampStr(githubAccess || "", 500);
     const concernsClean = clampStr(concerns || "", 2000);
-    const testEmailClean = clampStr(testEmail || "", 200);
-    const limitedAccessClean = clampStr(limitedAccess || "", 1000);
     const needsDevClean = asBool(needsDev) || asBool(webSelected);
     const needsSecurityClean = asBool(needsSecurity) || asBool(securitySelected);
-    const authorizationClean = asBool(authorization);
+    const requesterAuthorityConfirmed = asBool(authorization);
 
     if (!fullNameClean) {
       return res.status(400).json({ ok: false, error: "Full name is required." });
@@ -382,12 +428,22 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
       return res.status(400).json({ ok: false, error: "Website is required." });
     }
 
+    if (!isValidHttpUrl(websiteClean)) {
+      return res.status(400).json({
+        ok: false,
+        error: "Website must be a valid HTTP or HTTPS URL.",
+      });
+    }
+
     if (!needsDevClean && !needsSecurityClean) {
       return res.status(400).json({ ok: false, error: "Choose at least one service." });
     }
 
-    if (needsSecurityClean && !authorizationClean) {
-      return res.status(400).json({ ok: false, error: "Authorization is required." });
+    if (needsSecurityClean && !requesterAuthorityConfirmed) {
+      return res.status(400).json({
+        ok: false,
+        error: "Please confirm ownership or authority to request an assessment.",
+      });
     }
 
     if (!resend || !SUPPORT_INBOX || !SUPPORT_FROM) {
@@ -408,9 +464,15 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
       needsDevClean ? ["Budget range", budgetRangeClean || "Not provided"] : null,
       needsDevClean ? ["Timeline", timelineClean || "Not provided"] : null,
       needsSecurityClean ? ["GitHub / repo access", githubAccessClean || "Not provided"] : null,
-      needsSecurityClean ? ["Authorization", authorizationClean ? "Confirmed" : "Missing"] : null,
-      testEmailClean ? ["Test email", testEmailClean] : null,
-      limitedAccessClean ? ["Access notes", limitedAccessClean] : null,
+      needsSecurityClean
+        ? [
+            "Requester authority",
+            requesterAuthorityConfirmed
+              ? "Confirmed ownership or authority to request an assessment"
+              : "Missing",
+          ]
+        : null,
+      needsSecurityClean ? ["Testing authorization", "Not granted by this form"] : null,
     ].filter(Boolean);
 
     const teamTopic =
@@ -436,7 +498,7 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
       preview: "A new start request was submitted.",
     });
 
-    await resend.emails.send({
+    await sendEmail({
       from: SUPPORT_FROM,
       to: [SUPPORT_INBOX],
       replyTo: emailClean,
@@ -448,7 +510,7 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
       name: fullNameClean,
       email: emailClean,
       website: websiteClean,
-      summary: `We received your ${requestedWork.toLowerCase()} request and will review it shortly.`,
+      summary: `We received your ${requestedWork.toLowerCase()} request and will review it within one business day. Submitting this form does not authorize testing.`,
       details: [
         ["Requested work", requestedWork],
         ["Platform", platformClean || "Not provided"],
@@ -456,24 +518,30 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
         needsDevClean ? ["Budget range", budgetRangeClean || "Not provided"] : null,
         needsDevClean ? ["Timeline", timelineClean || "Not provided"] : null,
         needsSecurityClean ? ["GitHub / repo access", githubAccessClean || "Not provided"] : null,
+        needsSecurityClean
+          ? ["Requester authority", "Confirmed ownership or authority to request an assessment"]
+          : null,
+        needsSecurityClean ? ["Testing authorization", "Not granted by this form"] : null,
       ].filter(Boolean),
       detailsTitle: "What we received",
       nextSteps: [
-        "We review the request and confirm the scope.",
+        "We review the request within one business day and confirm the proposed scope.",
         needsSecurityClean
-          ? "If needed, we will ask for limited access or a temporary test account."
+          ? "Testing begins only after scope, written authorization, cleared payment, the testing window, and required access are confirmed."
           : "We reply with timing, pricing, and the best next step for the build.",
-        "We follow up by email with the next step.",
+        needsSecurityClean
+          ? "If access is needed, we will provide approved secure exchange instructions after the engagement is confirmed."
+          : "We follow up by email with the next step.",
       ],
       message: concernsClean,
       messageTitle: concernsClean ? "Your notes" : "Notes",
       title: "Start request received",
-      preview: "We got your start request and will review it shortly.",
-      intro: "Thanks for starting with ThreatNest. We received your request and will review it shortly.",
+      preview: "We got your start request and will review it within one business day.",
+      intro: "Thanks for starting with ThreatNest. We received your request and will review it within one business day.",
       subject: "We received your start request - ThreatNest",
     });
 
-    await resend.emails.send({
+    await sendEmail({
       from: SUPPORT_FROM,
       to: [emailClean],
       subject: t2.subject,
@@ -495,11 +563,18 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
           ? slackField("GitHub / repo", githubAccessClean || "Not provided")
           : null,
         needsSecurityClean
-          ? slackField("Authorization", authorizationClean ? "Confirmed" : "Missing")
+          ? slackField(
+              "Requester authority",
+              requesterAuthorityConfirmed
+                ? "Confirmed ownership or authority to request an assessment"
+                : "Missing"
+            )
+          : null,
+        needsSecurityClean
+          ? slackField("Testing authorization", "Not granted by this form")
           : null,
         slackField("Page", pageUrlClean || "https://threatnest.com/start"),
       ],
-      // Keep Slack summaries useful, but avoid sending test credentials there.
       notes: concernsClean,
     }).catch((error) => {
       console.error("start request slack notification error:", error);
@@ -537,8 +612,8 @@ app.post("/api/support/ticket", rateLimit(5), async (req, res) => {
     const messageClean = clampStr(message || "", 2000);
     const websiteClean = clampStr(website || "", 500);
     const pageUrlClean = clampStr(pageUrl || "", 500);
-    const topicClean = clampStr(topic || "Contact Request", 160);
-    const categoryClean = clampStr(category || "Contact", 120);
+    const topicClean = cleanHeaderValue(topic || "Contact Request", 160);
+    const categoryClean = cleanHeaderValue(category || "Contact", 120);
     const hasEmail = Boolean(emailClean);
 
     if (!nameClean) {
@@ -551,6 +626,13 @@ app.post("/api/support/ticket", rateLimit(5), async (req, res) => {
 
     if (!messageClean) {
       return res.status(400).json({ ok: false, error: "Message is required." });
+    }
+
+    if (websiteClean && !isValidHttpUrl(websiteClean)) {
+      return res.status(400).json({
+        ok: false,
+        error: "Website must be a valid HTTP or HTTPS URL.",
+      });
     }
 
     if (!resend || !SUPPORT_INBOX || !SUPPORT_FROM) {
@@ -570,7 +652,7 @@ app.post("/api/support/ticket", rateLimit(5), async (req, res) => {
       preview: "A new contact request was submitted.",
     });
 
-    await resend.emails.send({
+    await sendEmail({
       from: SUPPORT_FROM,
       to: [SUPPORT_INBOX],
       replyTo: hasEmail ? emailClean : undefined,
@@ -588,17 +670,17 @@ app.post("/api/support/ticket", rateLimit(5), async (req, res) => {
         detailsTitle: "Message details",
         nextSteps: [
           "We review your message.",
-          "We reply within about 1 business day.",
+          "We reply within one business day.",
         ],
         message: messageClean,
         messageTitle: "Your message",
         title: "Message received",
-        preview: "We got your message and will reply within 24 hours.",
-        intro: "Thanks for contacting ThreatNest. We received your message and usually reply within 1 business day.",
+        preview: "We got your message and will reply within one business day.",
+        intro: "Thanks for contacting ThreatNest. We received your message and usually reply within one business day.",
         subject: "We received your message - ThreatNest",
       });
 
-      await resend.emails.send({
+      await sendEmail({
         from: SUPPORT_FROM,
         to: [emailClean],
         subject: t2.subject,
@@ -661,7 +743,7 @@ app.post("/api/payment/status", requireInternalKey, rateLimit(20), async (req, r
         orderId: orderIdClean,
       });
 
-      await resend.emails.send({
+      await sendEmail({
         from: SUPPORT_FROM,
         to: [emailClean],
         subject: t.subject,
@@ -678,7 +760,7 @@ app.post("/api/payment/status", requireInternalKey, rateLimit(20), async (req, r
         reason: reasonClean,
       });
 
-      await resend.emails.send({
+      await sendEmail({
         from: SUPPORT_FROM,
         to: [emailClean],
         subject: t.subject,
@@ -693,6 +775,30 @@ app.post("/api/payment/status", requireInternalKey, rateLimit(20), async (req, r
     console.error("payment status email error:", err);
     return res.status(500).json({ ok: false, error: "Failed to send email." });
   }
+});
+
+app.use((req, res) => {
+  res.status(404).json({ ok: false, error: "Not found." });
+});
+
+app.use((error, req, res, next) => {
+  if (res.headersSent) {
+    return next(error);
+  }
+
+  const status = Number.isInteger(error?.status) ? error.status : 500;
+  if (status >= 500) {
+    console.error("unhandled request error:", error);
+  }
+
+  const message =
+    status === 400
+      ? "Invalid request."
+      : status === 403
+        ? "Origin not allowed."
+        : "Internal server error.";
+
+  return res.status(status).json({ ok: false, error: message });
 });
 
 // -----------------------------

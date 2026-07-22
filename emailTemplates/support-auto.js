@@ -183,10 +183,10 @@ export default function supportAutoTpl({
   messageTitle = "Message",
 }) {
   const finalTitle = safe(title, "Message received");
-  const finalPreview = safe(preview, "We got your message and will reply within 24 hours.");
+  const finalPreview = safe(preview, "We got your message and will reply within one business day.");
   const finalIntro = safe(
     intro,
-    "Thanks for contacting ThreatNest. We received your message and usually reply within 24 hours."
+    "Thanks for contacting ThreatNest. We received your message and usually reply within one business day."
   );
   const finalSubject = safe(subject, "We received your message - ThreatNest");
 
