@@ -118,7 +118,7 @@ const SUPPORT_OPTIONS = [
     title: "How long does it take?",
     keywords: ["time", "delivery", "seven", "days"],
     answer:
-      "The standard report is delivered within seven calendar days. The period begins only after scope, written authorization, cleared payment, the testing window, and required access are confirmed.",
+      "The standard audit uses a seven-day testing window. Testing begins after the signed agreement, written authorization, scope, required deposit, testing window, access, and emergency contact are confirmed. The final report is delivered within 48 hours after testing is completed.",
   },
   {
     id: "requirements",
@@ -527,7 +527,7 @@ app.post("/api/start/request", rateLimit(5), async (req, res) => {
       nextSteps: [
         "We review the request within one business day and confirm the proposed scope.",
         needsSecurityClean
-          ? "Testing begins only after scope, written authorization, cleared payment, the testing window, and required access are confirmed."
+          ? "Testing begins only after the signed agreement, written authorization, scope, required deposit, testing window, access, and emergency contact are confirmed."
           : "We reply with timing, pricing, and the best next step for the build.",
         needsSecurityClean
           ? "If access is needed, we will provide approved secure exchange instructions after the engagement is confirmed."
